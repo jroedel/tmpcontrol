@@ -1,0 +1,14 @@
+{
+  "controllers": [
+    {
+      "name":"test-config",
+      "thermometerPath": "../../temperature.txt",
+      "controlType": "cool",
+      "switchHosts": ["192.168.2.161"],
+      "disableFreezeProtection": false,
+      "temperatureSchedule": {
+        "2024-06-28T00:00:00Z": 33
+      }
+    }
+  ]
+}
