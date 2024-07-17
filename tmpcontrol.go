@@ -90,7 +90,7 @@ type TmpLog struct {
 	TurningOnNotOff       bool
 	HostsPipeSeparated    string
 
-	//these should be left blank unless we get this from the local db
+	//these should be left blank unless we get this from the local dbo
 	DbAutoId            int
 	ExecutionIdentifier string
 }
@@ -118,7 +118,7 @@ func NewControlLooper(cg *ConfigGopher, HeatOrCoolController HeatOrCoolControlle
 		Cg:                   cg,
 		HeatOrCoolController: HeatOrCoolController,
 		TemperatureReader:    tmpReader,
-		dbFileName:           "tmplog.db",
+		dbFileName:           "tmplog.dbo",
 		Logger:               logger,
 	}
 	return &cl
@@ -155,8 +155,8 @@ func (cl *ControlLooper) StartControlLoop() {
 
 	db, err := NewSqliteDbFromFilename(cl.dbFileName, cl.Logger)
 	if err != nil {
-		cl.Logger.Printf("Error creating sqlite db: %s\n", err)
-		cl.Cg.NotifyServer(fmt.Sprintf("Error creating sqlite db: %s\n", err), SeriousNotification)
+		cl.Logger.Printf("Error creating sqlite dbo: %s\n", err)
+		cl.Cg.NotifyServer(fmt.Sprintf("Error creating sqlite dbo: %s\n", err), SeriousNotification)
 	}
 	defer db.Close()
 
@@ -231,8 +231,8 @@ func (cl *ControlLooper) StartControlLoop() {
 			if (TmpLog{}) != returnValue.tmplog {
 				err := db.PersistTmpLog(returnValue.tmplog)
 				if err != nil {
-					cl.Logger.Printf("%s [%s] Error persisting log to sqlite db: %s", stdTimestamp(), returnValue.controllerConfig.Name, err)
-					cl.Cg.NotifyServer("We couldn't save a TmpLog to the sqlite db", ProblemNotification)
+					cl.Logger.Printf("%s [%s] Error persisting log to sqlite dbo: %s", stdTimestamp(), returnValue.controllerConfig.Name, err)
+					cl.Cg.NotifyServer("We couldn't save a TmpLog to the sqlite dbo", ProblemNotification)
 				}
 			}
 

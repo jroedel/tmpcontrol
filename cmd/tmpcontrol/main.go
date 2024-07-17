@@ -1,15 +1,10 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"github.com/jroedel/tmpcontrol"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -83,14 +78,10 @@ func main() {
 	}
 
 	kasaController := tmpcontrol.HeatOrCoolController(tmpcontrol.NewKasaHeatOrCoolController(kasaPath))
-	adminNotifier := SmsNotifier{}
+	adminNotifier := tmpcontrol.SmsNotifier{}
 	cg := tmpcontrol.ConfigGopher{ServerRoot: configServerRootUrl, ClientId: clientIdentifier, LocalConfigPath: localConfigPath, ConfigFetchInterval: time.Duration(configFetchIntervalInSeconds) * time.Second, NotifyOutput: adminNotifier}
 	cl := tmpcontrol.NewControlLooper(&cg, kasaController, logger)
 	cl.StartControlLoop()
-}
-
-type SmsNotifier struct {
-	io.Writer
 }
 
 // validate user input
@@ -117,55 +108,4 @@ func validateParams() error {
 
 	//TODO check if we can execute kasa
 	return nil
-}
-
-// notifyAdminViaSms send and pray, this function will receive no logging
-func (SmsNotifier) Write(p []byte) (int, error) {
-	url := "https://czsrqykgpsseofmwnbja5t46f40tojzd.lambda-url.us-east-2.on.aws/"
-	key := os.Getenv("ADMIN_NOTIFY_KEY")
-	if key == "" {
-		errMessage := "ADMIN_NOTIFY_KEY environment variable not set, unable to notify admin via SMS"
-		fmt.Println(errMessage)
-		return 0, errors.New(errMessage)
-	}
-	number := os.Getenv("ADMIN_NOTIFY_NUMBER")
-	if number == "" {
-		errMessage := "ADMIN_NOTIFY_NUMBER environment variable not set, unable to notify admin via SMS"
-		fmt.Println(errMessage)
-		return 0, errors.New(errMessage)
-	}
-	payload := smsPayload{
-		Key:     key,
-		To:      number,
-		Message: "[tmpcontrol]" + string(p),
-	}
-	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, nil
-	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			return
-		}
-	}(resp.Body)
-	//respBody, err := io.ReadAll(resp.Body)
-	//if err != nil {
-	//	return
-	//}
-	//fmt.Printf("%#v\n", string(respBody))
-	return len(p), nil
-}
-
-type smsPayload struct {
-	Key     string `json:"key"`
-	To      string `json:"to"`
-	Message string `json:"message"`
 }

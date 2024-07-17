@@ -11,26 +11,26 @@ import (
 	"time"
 )
 
-type Db interface {
+type ClientDb interface {
 	PersistTmpLog(tmplog TmpLog) error
 	io.Closer
 }
 
-type SqliteDb struct {
+type SqliteClientDb struct {
 	db                         *sql.DB
 	isClosed                   bool
 	currentExecutionIdentifier string //random string to identify the current execution of the script
 	logger                     Logger
 }
 
-func NewSqliteDbFromFilename(filename string, logger Logger) (SqliteDb, error) {
+func NewSqliteDbFromFilename(filename string, logger Logger) (SqliteClientDb, error) {
 	//This variable must include any connection params so it's ready each time we invoke the database
 	filename = filename + "?_pragma=busy_timeout(1000)&_pragma=journal_mode(WAL)"
 	logger.Printf("We're opening/creating a database at \"%s\"", filename)
 	db, err := sql.Open("sqlite", filename)
 	if err != nil {
 		logger.Printf("Failed to open database at \"%s\": %s", filename, err)
-		return SqliteDb{}, err
+		return SqliteClientDb{}, err
 	}
 
 	// get SQLite version
@@ -39,7 +39,7 @@ func NewSqliteDbFromFilename(filename string, logger Logger) (SqliteDb, error) {
 	err = result.Scan(&version)
 	if err != nil {
 		logger.Printf("Failed to query version: %s", err)
-		return SqliteDb{}, err
+		return SqliteClientDb{}, err
 	}
 	logger.Printf("sqlite version: %s", version)
 
@@ -64,14 +64,14 @@ func NewSqliteDbFromFilename(filename string, logger Logger) (SqliteDb, error) {
 		_, err = db.Exec(v)
 		if err != nil {
 			logger.Printf("Failed to construct database. Couldn't execute command \"%s\": %s", v, err)
-			return SqliteDb{}, err
+			return SqliteClientDb{}, err
 		}
 	}
 
-	return SqliteDb{db: db, logger: logger, currentExecutionIdentifier: generateRandomExecutionIdentifier()}, nil
+	return SqliteClientDb{db: db, logger: logger, currentExecutionIdentifier: generateRandomExecutionIdentifier()}, nil
 }
 
-func (dbo SqliteDb) Close() error {
+func (dbo SqliteClientDb) Close() error {
 	return dbo.db.Close()
 }
 
@@ -79,7 +79,7 @@ func generateRandomExecutionIdentifier() string {
 	return randString(8)
 }
 
-func (dbo SqliteDb) PersistTmpLog(tmplog TmpLog) error {
+func (dbo SqliteClientDb) PersistTmpLog(tmplog TmpLog) error {
 	statement, _ := dbo.db.Prepare("INSERT INTO tmplog (ExecutionIdentifier, ControllerName, Timestamp, TemperatureInF, DesiredTemperatureInF, IsHeatingNotCooling, TurningOnNotOff, HostsPipeSeparated, HasBeenSentToServer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	_, err := statement.Exec(dbo.currentExecutionIdentifier, tmplog.ControllerName, tmplog.Timestamp.Unix(), tmplog.TemperatureInF, tmplog.DesiredTemperatureInF, tmplog.IsHeatingNotCooling, tmplog.TurningOnNotOff, tmplog.HostsPipeSeparated, false)
 	if err != nil {
@@ -88,7 +88,7 @@ func (dbo SqliteDb) PersistTmpLog(tmplog TmpLog) error {
 	return nil
 }
 
-func (dbo SqliteDb) FetchTmpLogsNotYetSentToServer() ([]TmpLog, error) {
+func (dbo SqliteClientDb) FetchTmpLogsNotYetSentToServer() ([]TmpLog, error) {
 	rows, _ := dbo.db.Query("SELECT Id, ExecutionIdentifier, ControllerName, Timestamp, TemperatureInF, DesiredTemperatureInF, IsHeatingNotCooling, TurningOnNotOff, HostsPipeSeparated FROM tmplog WHERE HasBeenSentToServer = 0")
 	//30 is just a guess of how many rows we're getting
 	tmpLogs := make([]TmpLog, 0, 30)
@@ -103,7 +103,7 @@ func (dbo SqliteDb) FetchTmpLogsNotYetSentToServer() ([]TmpLog, error) {
 	return tmpLogs, nil
 }
 
-func (dbo SqliteDb) GetAverageRecentTemperature(controllerName string, d time.Duration) (float32, error) {
+func (dbo SqliteClientDb) GetAverageRecentTemperature(controllerName string, d time.Duration) (float32, error) {
 	timestampRef := time.Now().Add(-d).Unix()
 	row := dbo.db.QueryRow("SELECT AVG(TemperatureInF) FROM tmplog WHERE ExecutionIdentifier = ? AND ControllerName = ? AND Timestamp >= ?", dbo.currentExecutionIdentifier, controllerName, timestampRef)
 	var avgTemp float32
@@ -115,7 +115,7 @@ func (dbo SqliteDb) GetAverageRecentTemperature(controllerName string, d time.Du
 }
 
 // MarkTmpLogsAsSentToServer TODO implement a limit to how many can be marked complete at at time
-func (dbo SqliteDb) MarkTmpLogsAsSentToServer(ids []int) error {
+func (dbo SqliteClientDb) MarkTmpLogsAsSentToServer(ids []int) error {
 	idListBuilder := strings.Builder{}
 
 	writeLeadingComma := false

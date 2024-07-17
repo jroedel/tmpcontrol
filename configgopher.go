@@ -34,7 +34,8 @@ const (
 )
 
 func (cg *ConfigGopher) SendConfig(config ControllersConfig) error {
-	//POST to
+	//TODO POST
+	return nil
 }
 
 // NotifyServer
