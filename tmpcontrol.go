@@ -36,7 +36,6 @@ func (c ConfigSource) String() string {
 
 type ControllersConfig struct {
 	Controllers []Controller `json:"controllers"`
-	Source      ConfigSource
 }
 
 type Controller struct {
@@ -127,7 +126,7 @@ func NewControlLooper(cg *ConfigGopher, HeatOrCoolController HeatOrCoolControlle
 func (cl *ControlLooper) StartControlLoop() {
 	var lastConfigFetched time.Time
 	cl.Logger.Printf("%s Fetching initial config\n", stdTimestamp())
-	config, err := cl.Cg.FetchConfig()
+	config, source, err := cl.Cg.FetchConfig()
 	if err != nil {
 		//if the config couldn't be fetched the first time, the application will exit; later on, config reads will be tolerated
 		panic(fmt.Sprintf("%s", err.Error()))
@@ -135,7 +134,7 @@ func (cl *ControlLooper) StartControlLoop() {
 	lastConfigFetched = time.Now()
 	//isConfigFetchFailing used to track when to notify the server of issues
 	isConfigFetchFailing := false
-	cl.Logger.Printf("%s Successfully fetched initial config; we'll continue to poll every %d seconds\n%+v\n", stdTimestamp(), cl.Cg.ConfigFetchInterval, config)
+	cl.Logger.Printf("%s Successfully fetched initial config from %s; we'll continue to poll every %d seconds\n%+v\n", stdTimestamp(), source, cl.Cg.ConfigFetchInterval, config)
 	cl.Cg.NotifyServer(fmt.Sprintf("%s: we got some config and we're starting up", cl.Cg.ClientId), InfoNotification)
 	cl.Logger.Printf("%s Beginning control loop for %d controller(s)\n", stdTimestamp(), len(config.Controllers))
 
@@ -169,7 +168,7 @@ func (cl *ControlLooper) StartControlLoop() {
 		loopStart := time.Now()
 		//if it's been more than the configured interval between fetches, we'll check for new config (note: we start checking every 15 secs)
 		if lastConfigFetched.Add(cl.Cg.ConfigFetchInterval).Before(time.Now()) {
-			newConfig, err := cl.Cg.FetchConfig()
+			newConfig, source, err := cl.Cg.FetchConfig()
 			if err != nil {
 				//TODO Factor out this function call
 				configSource, ok := cl.Cg.GetSourceKind()
@@ -188,7 +187,7 @@ func (cl *ControlLooper) StartControlLoop() {
 					cl.Cg.NotifyServer(fmt.Sprintf("%s: we haven't received config in %s", cl.Cg.ClientId, intervalNotifyServerForConfigFetch.String()), ProblemNotification)
 				}
 			} else {
-				cl.Logger.Printf("%s We successfully fetched config from %s\n", stdTimestamp(), newConfig.Source)
+				cl.Logger.Printf("%s We successfully fetched config from %s\n", stdTimestamp(), source)
 				if !AreConfigsEqual(config, newConfig) {
 					cl.Logger.Printf("NEW config!")
 					cl.Logger.Printf("%+v\n", newConfig)

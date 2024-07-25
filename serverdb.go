@@ -13,17 +13,19 @@ import (
 /**
 DB schema
 
-Really the main thing is saving the configuration
-
 Config
 ================
 ClientId TEXT
 Config TEXT
 UpdatedAt INTEGER
 
-ClientCheckin
-================
+Notifications
+=====================
+NotificationId PRIMARY KEY
+PostedAt INTEGER
 ClientId TEXT
+Message TEXT
+Severity INTEGER
 
 */
 
@@ -34,6 +36,8 @@ type ServerDb interface {
 	//Configs: the main purpose of this server, to receive and server client config
 	CreateOrUpdateConfig(clientId string, config ControllersConfig) error
 	GetConfig(clientId string) (ControllersConfig, bool, error)
+	ListNotifications(clientId string) ([]Notification, error)
+	PutNotification(clientId string, note Notification) error
 
 	//Check-ins: meant to detect offline clients
 	//ClientIdCheckIn(clientId string) error
@@ -76,6 +80,14 @@ func NewSqliteServerDbFromFilename(filename string, logger Logger) (SqliteServer
     		  ConfigJson TEXT NOT NULL,
 	          UpdatedAt INTEGER NOT NULL
 	       );`,
+		`CREATE TABLE IF NOT EXISTS notifications (
+	          NotificationId TEXT PRIMARY KEY,
+	          ReportedAt INTEGER NOT NULL,
+	          ClientId TEXT NOT NULL,
+	          Message TEXT NOT NULL,
+	          Severity INTEGER NOT NULL,
+	          HasUserBeenNotified INTEGER
+	       );`,
 	}
 	for _, v := range sqlCmds {
 		_, err = db.Exec(v)
@@ -90,6 +102,52 @@ func NewSqliteServerDbFromFilename(filename string, logger Logger) (SqliteServer
 
 func (dbo SqliteServerDb) Close() error {
 	return dbo.db.Close()
+}
+
+func (dbo SqliteServerDb) ListNotifications(clientId string) ([]Notification, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), maxSqlExecutionTime)
+	defer cancel()
+	rows, err := dbo.db.QueryContext(ctx, "SELECT NotificationId, ReportedAt, Message, Severity, HasUserBeenNotified FROM notifications WHERE clientId = ? LIMIT 50", clientId)
+	if err != nil {
+		return nil, err
+	}
+	var notifications []Notification
+	for rows.Next() {
+		var notification Notification
+		notification.ClientId = clientId
+		var tmpTime int64
+		err := rows.Scan(&notification.NotificationId, &tmpTime, &notification.Message,
+			&notification.Severity, &notification.HasUserBeenNotified,
+		)
+		if err != nil {
+			//TODO do we have to sacrifice everything?
+			return nil, err
+		}
+		//TODO test this
+		notification.ReportedAt = time.Unix(tmpTime, 0)
+		notifications = append(notifications, notification)
+	}
+	return notifications, nil
+}
+
+func (dbo SqliteServerDb) PutNotification(clientId string, note Notification) error {
+	ctx, cancel := context.WithTimeout(context.Background(), maxSqlExecutionTime)
+	defer cancel()
+
+	result, err := dbo.db.ExecContext(ctx, "INSERT INTO notifications (ReportedAt, ClientId, Message, Severity, HasUserBeenNotified) VALUES ($1, $2, $3, $4, $5)", note.ReportedAt.Unix(), note.ClientId, note.Message, note.Severity, note.HasUserBeenNotified)
+	if err != nil {
+		return err
+	}
+	rowsCount, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsCount == 0 {
+		return fmt.Errorf("no rows affected")
+	} else if rowsCount > 1 {
+		return fmt.Errorf("too many rows affected")
+	}
+	return nil
 }
 
 func (dbo SqliteServerDb) GetConfig(clientId string) (ControllersConfig, bool, error) {

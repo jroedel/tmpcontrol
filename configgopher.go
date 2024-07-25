@@ -33,6 +33,45 @@ const (
 	SeriousNotification
 )
 
+func (s ServerNotificationUrgency) String() string {
+	switch s {
+	case InfoNotification:
+		return "info"
+	case ProblemNotification:
+		return "problem"
+	case SeriousNotification:
+		return "serious"
+	default:
+		return ""
+	}
+}
+
+func (s ServerNotificationUrgency) MarshalJSON() ([]byte, error) {
+	buffer := bytes.NewBufferString(`""`)
+	buffer.WriteString(s.String())
+	buffer.WriteString(`"`)
+	return buffer.Bytes(), nil
+}
+
+func (s *ServerNotificationUrgency) UnmarshalJSON(b []byte) error {
+	var j string
+	err := json.Unmarshal(b, &j)
+	if err != nil {
+		return err
+	}
+	switch j {
+	case "info":
+		*s = InfoNotification
+	case "problem":
+		*s = ProblemNotification
+	case "serious":
+		*s = SeriousNotification
+	default:
+		*s = InfoNotification //we won't make a big deal about it
+	}
+	return nil
+}
+
 func (cg *ConfigGopher) SendConfig(config ControllersConfig) error {
 	//TODO POST
 	return nil
@@ -61,29 +100,23 @@ func (cg *ConfigGopher) GetSourceKind() (ConfigSource, bool) {
 	return 0, false
 }
 
-func (cg *ConfigGopher) FetchConfig() (ControllersConfig, error) {
+func (cg *ConfigGopher) FetchConfig() (ControllersConfig, ConfigSource, error) {
 	if err := cg.HasError(); err != nil {
-		return ControllersConfig{}, err
+		return ControllersConfig{}, 0, err
 	}
 
 	//TODO notify user/server if there are no configured switchHosts
 	if cg.ServerRoot != "" {
 		config, err := cg.fetchConfigFromServer()
-		if err == nil {
-			config.Source = ConfigSourceServer
-		}
-		return config, err
+		return config, ConfigSourceServer, err
 	} else if cg.LocalConfigPath != "" {
 		//fetch from file
 		config, err := cg.fetchConfigFromFile()
-		if err == nil {
-			config.Source = ConfigSourceLocalFile
-		}
-		return config, err
+		return config, ConfigSourceLocalFile, err
 	}
 
 	//TODO validate configuration. for example, no duplicate Controller names, also "heat"/"cool"
-	return ControllersConfig{}, fmt.Errorf("please specify a configuration file path or control server url")
+	return ControllersConfig{}, 0, fmt.Errorf("please specify a configuration file path or control server url")
 }
 
 func (cg *ConfigGopher) HasError() error {

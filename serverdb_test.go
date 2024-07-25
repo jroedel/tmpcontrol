@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 )
 
 func TestServerDB(t *testing.T) {
@@ -81,4 +82,20 @@ func TestServerDB(t *testing.T) {
 	if !tmpcontrol.AreConfigsEqual(config2, returnedConfig2) {
 		t.Fatal("We expected the config to be the same")
 	}
+
+	//test notifications
+	clientId = "hey-o"
+	testTime := time.Now()
+	testNote := tmpcontrol.Notification{
+		ReportedAt:          testTime,
+		ClientId:            clientId,
+		Message:             "this is a test!! ó",
+		Severity:            "",
+		HasUserBeenNotified: false,
+	}
+	err = dbo.PutNotification(clientId, testNote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//TODO get the notification back to make sure it works
 }

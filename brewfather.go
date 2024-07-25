@@ -24,7 +24,7 @@ func (t TempType) String() string {
 	return ""
 }
 
-//const BREWFATHER_URL="http://log.brewfather.net/stream?id=dd0QyN7dvagTrY";
+//const BREWFATHER_URL="http://log.brewfather.net/stream?id=xxxxxxxxxxxxx";
 //
 //function testSendTempToBrewfather() {
 //sendTempToBrewfather('brew-pi', 21.812, 'Fridge');
