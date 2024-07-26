@@ -15,7 +15,7 @@ tmpcontrol runs on a raspberry pi with a DS18B20 temperature sensor and can cont
 
 ```
 -kasa-path /home/pi/.local/bin/kasa
--config-server-root-url 
+-config-server-root-url https://tmpcontrol.online
 -local-config-path pi-config.json
 -client-identifier johns-basement
 -config-fetch-interval 60
@@ -25,7 +25,7 @@ tmpcontrol runs on a raspberry pi with a DS18B20 temperature sensor and can cont
 
 1. Fetch the code base
 
-   `code goes here`
+   `git clone https://github.com/jroedel/tmpcontrol.git`
    
    or download the binary directly to the raspberry pi
    
@@ -76,11 +76,65 @@ tmpcontrol runs on a raspberry pi with a DS18B20 temperature sensor and can cont
 
 ### Prep mash water for when you wake up in the morning
 
+```json
+{
+  "controllers": [
+    {
+      "name":"test-config",
+      "thermometerPath": "../../temperature.txt",
+      "controlType": "heat",
+      "switchHosts": ["192.168.0.11"],
+      "disableFreezeProtection": false,
+      "temperatureSchedule": {
+         "2024-07-01T06:00:00Z": 150,
+         "2024-07-01T07:00:00Z": 156
+      }
+    }
+  ]
+}
+```
+
 ### Keep kegs ready to serve, 33°F
+```json
+{
+  "controllers": [
+    {
+      "name":"test-config",
+      "thermometerPath": "../../temperature.txt",
+      "controlType": "cool",
+      "switchHosts": ["192.168.0.11"],
+      "disableFreezeProtection": false,
+      "temperatureSchedule": {
+         "2024-07-01T00:00:00Z": 33
+      }
+    }
+  ]
+}
+```
 
 ### Fermentation with cold crash
 
-### Lager fermentation with diacetyl rest
+```json
+{
+  "controllers": [
+    {
+      "name":"test-config",
+      "thermometerPath": "../../temperature.txt",
+      "controlType": "cool",
+      "switchHosts": ["192.168.0.11"],
+      "disableFreezeProtection": false,
+      "temperatureSchedule": {
+         "2024-07-01T00:00:00Z": 68,
+         "2024-07-09T00:00:00Z": 62,
+         "2024-07-09T12:00:00Z": 56,
+         "2024-07-10T00:00:00Z": 50,
+         "2024-07-10T12:00:00Z": 44,
+         "2024-07-11T00:00:00Z": 38
+      }
+    }
+  ]
+}
+```
 
 ## Pending work
 
@@ -91,4 +145,3 @@ tmpcontrol runs on a raspberry pi with a DS18B20 temperature sensor and can cont
 ## FAQ
 
 ### How do I configure the temperature sensor and find its PATH?
-
