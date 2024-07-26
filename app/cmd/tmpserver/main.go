@@ -2,9 +2,10 @@ package main
 
 import (
 	"flag"
-	"github.com/jroedel/tmpcontrol"
 	"log"
 	"os"
+
+	"github.com/open-policy-agent/opa/server"
 )
 
 var (
@@ -24,7 +25,7 @@ func main() {
 	// Create logger
 	logger := log.New(os.Stdout, "[tmpserver] ", 0)
 
-	s, err := tmpcontrol.NewServer("tmpserver.db", logger)
+	s, err := server.New("tmpserver.db", logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
