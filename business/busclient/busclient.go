@@ -1,4 +1,4 @@
-package bustemp
+package busclient
 
 import (
 	"fmt"
@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jroedel/tmpcontrol/sdk/clientdb"
+	"github.com/jroedel/tmpcontrol/sdk/clientsqlite"
 )
 
 type Business struct {
-	cln         *clientdb.ClientDB
+	cln         *clientsqlite.ClientSqlite
 	executionID string
 }
 
-func New(cln *clientdb.ClientDB) *Business {
+func New(cln *clientsqlite.ClientSqlite) *Business {
 	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	const lenExecutionID = 8
 
@@ -85,6 +85,7 @@ func (b *Business) QueryHasNotBeenSentToServer() ([]Temperature, error) {
 	var tempTmpLog Temperature
 
 	results, err := b.cln.Query(query,
+		[]any{}, //no params
 		&tempTmpLog.DbAutoId,
 		&tempTmpLog.ExecutionIdentifier,
 		&tempTmpLog.ControllerName,
