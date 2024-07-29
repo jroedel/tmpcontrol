@@ -1,80 +1,13 @@
 package tmpcontrol
 
 import (
-	"bytes"
-	"context"
 	"errors"
 	"fmt"
-	"log"
+	"github.com/jroedel/tmpcontrol/business/busconfiggopher"
 	"os/exec"
-	"regexp"
 	"strings"
 	"time"
 )
-
-// ClientIdentifiersRegex pattern to which clientIdentifiers and controllerNames should adhere
-var ClientIdentifiersRegex = regexp.MustCompile(`^[-a-zA-Z0-9]{3,50}$`)
-
-type ConfigSource int
-
-const (
-	ConfigSourceLocalFile ConfigSource = iota + 1
-	ConfigSourceServer
-)
-
-func (c ConfigSource) String() string {
-	switch c {
-	case ConfigSourceLocalFile:
-		return "local file"
-	case ConfigSourceServer:
-		return "server"
-	default:
-		panic(fmt.Sprintf("Unknown config source: %#v", c))
-	}
-	return ""
-}
-
-type ControllersConfig struct {
-	Controllers []Controller `json:"controllers"`
-}
-
-type Controller struct {
-	Name                    string                `json:"name"`
-	ThermometerPath         string                `json:"thermometerPath"`
-	ControlType             string                `json:"controlType"`
-	SwitchHosts             []string              `json:"switchHosts"`
-	TemperatureSchedule     map[time.Time]float32 `json:"temperatureSchedule"`
-	DisableFreezeProtection bool                  `json:"disableFreezeProtection"`
-}
-
-type Control int
-
-const (
-	// ControlOn Turn something on
-	ControlOn Control = iota + 1
-	// ControlOff Turn something off
-	ControlOff
-)
-
-func (c Control) String() string {
-	switch c {
-	case ControlOn:
-		return "on"
-	case ControlOff:
-		return "off"
-	default:
-		log.Fatalf("Unknown control type: %#v", c)
-	}
-	return ""
-}
-
-type HeatOrCoolController interface {
-	ControlDevice(host string, action Control) error
-}
-
-func stdTimestamp() string {
-	return time.Now().Format("2006-01-02 15:04:05")
-}
 
 type Logger interface {
 	Printf(string, ...interface{})
@@ -103,14 +36,14 @@ type TemperatureReader interface {
 }
 
 type ControlLooper struct {
-	Cg                   *ConfigGopher
+	Cg                   *busconfiggopher.ConfigGopher
 	HeatOrCoolController HeatOrCoolController
 	TemperatureReader    TemperatureReader
 	dbFileName           string
 	Logger               Logger
 }
 
-func NewControlLooper(cg *ConfigGopher, HeatOrCoolController HeatOrCoolController, logger Logger) *ControlLooper {
+func NewControlLooper(cg *busconfiggopher.ConfigGopher, HeatOrCoolController HeatOrCoolController, logger Logger) *ControlLooper {
 	//TODO maybe we can find the kasa path, test it, and suggest the user how to get it if they don't have it. Of course, it's not necessary if they want to supply a controlFunc
 	tmpReader := NewDS18B20Reader(logger)
 	cl := ControlLooper{
@@ -188,7 +121,7 @@ func (cl *ControlLooper) StartControlLoop() {
 				}
 			} else {
 				cl.Logger.Printf("%s We successfully fetched config from %s\n", stdTimestamp(), source)
-				if !AreConfigsEqual(config, newConfig) {
+				if !busconfiggopher.AreConfigsEqual(config, newConfig) {
 					cl.Logger.Printf("NEW config!")
 					cl.Logger.Printf("%+v\n", newConfig)
 					cl.Cg.NotifyServer("We just got some updated config", InfoNotification)
@@ -487,44 +420,4 @@ func (controller *Controller) GetCurrentDesiredTemperature() (float32, bool) {
 		return 0, false
 	}
 	return controller.TemperatureSchedule[mostRecentSchedule], true
-}
-
-// TODO maybe we should add this to the kasa controller struct
-const controlDeviceTimeout = time.Second * 4
-
-type KasaHeatOrCoolController struct {
-	kasaPath string
-}
-
-func NewKasaHeatOrCoolController(kasaPath string) *KasaHeatOrCoolController {
-	return &KasaHeatOrCoolController{
-		kasaPath: kasaPath,
-	}
-}
-
-func (k *KasaHeatOrCoolController) ControlDevice(host string, action Control) error {
-	var commandAction string
-	if action == ControlOn {
-		commandAction = "on"
-	} else {
-		commandAction = "off"
-	}
-
-	// Create a new Command instance
-	ctx, cancel := context.WithTimeout(context.Background(), controlDeviceTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, k.kasaPath, "--host", host, "--type", "plug", commandAction)
-
-	var b bytes.Buffer
-	cmd.Stdout = &b
-
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	stdOutput := b.String()
-	//fmt.Println(stdOutput)
-	if strings.Contains(stdOutput, "error") {
-		return fmt.Errorf("we detected mention of an error in the stdout of our kasa command call: %s", stdOutput)
-	}
-	return nil
 }

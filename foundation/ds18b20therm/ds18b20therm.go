@@ -1,12 +1,21 @@
-package tmpcontrol
+package ds18b20therm
 
+func ReadTemperatureInF(temperaturePath string) (float32, error) {
+	return 0.0, nil
+}
+
+func EnumerateThermometerPaths() ([]string, error) {
+	return []string{}, nil
+}
+
+/*
 import (
-	"errors"
-	"fmt"
-	"os"
-	"strconv"
-	"strings"
-	"time"
+"errors"
+"fmt"
+"os"
+"strconv"
+"strings"
+"time"
 )
 
 type DS18B20Reader struct {
@@ -109,3 +118,4 @@ func (t DS18B20Reader) EnumerateThermometerPaths() []string {
 	}
 	return temperaturePaths
 }
+*/

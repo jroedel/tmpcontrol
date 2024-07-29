@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jroedel/tmpcontrol/sdk/clientsqlite"
+	"github.com/jroedel/tmpcontrol/foundation/clientsqlite"
 )
 
 type Business struct {

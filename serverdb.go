@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"time"
 )
 
@@ -31,19 +30,6 @@ Severity INTEGER
 
 const maxConfigBytes = 100000
 const maxSqlExecutionTime = 2 * time.Second
-
-type ServerDb interface {
-	//Configs: the main purpose of this server, to receive and server client config
-	CreateOrUpdateConfig(clientId string, config ControllersConfig) error
-	GetConfig(clientId string) (ControllersConfig, bool, error)
-	ListNotifications(clientId string) ([]Notification, error)
-	PutNotification(clientId string, note Notification) error
-
-	//Check-ins: meant to detect offline clients
-	//ClientIdCheckIn(clientId string) error
-	//GetLastClientIdCheckIn(clientId string) (time.Time, error)
-	io.Closer
-}
 
 type SqliteServerDb struct {
 	db       *sql.DB

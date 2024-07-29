@@ -1,4 +1,4 @@
-package tmpcontrol
+package busconfiggopher
 
 import (
 	"bufio"
@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -21,71 +22,22 @@ type ConfigGopher struct {
 	//ClientId the client identifier to let the server know who we are
 	ClientId            string
 	ConfigFetchInterval time.Duration
-	//if a Writer is defined, server notifications will be written additionally to this Writer
-	NotifyOutput io.Writer
 }
 
-type ServerNotificationUrgency int
+// ClientIdentifiersRegex pattern to which clientIdentifiers and controllerNames should adhere
+var ClientIdentifiersRegex = regexp.MustCompile(`^[-a-zA-Z0-9]{3,50}$`)
 
-const (
-	InfoNotification ServerNotificationUrgency = iota + 1
-	ProblemNotification
-	SeriousNotification
-)
-
-func (s ServerNotificationUrgency) String() string {
-	switch s {
-	case InfoNotification:
-		return "info"
-	case ProblemNotification:
-		return "problem"
-	case SeriousNotification:
-		return "serious"
-	default:
-		return ""
-	}
+type ControllersConfig struct {
+	Controllers []Controller `json:"controllers"`
 }
 
-func (s ServerNotificationUrgency) MarshalJSON() ([]byte, error) {
-	buffer := bytes.NewBufferString(`""`)
-	buffer.WriteString(s.String())
-	buffer.WriteString(`"`)
-	return buffer.Bytes(), nil
-}
-
-func (s *ServerNotificationUrgency) UnmarshalJSON(b []byte) error {
-	var j string
-	err := json.Unmarshal(b, &j)
-	if err != nil {
-		return err
-	}
-	switch j {
-	case "info":
-		*s = InfoNotification
-	case "problem":
-		*s = ProblemNotification
-	case "serious":
-		*s = SeriousNotification
-	default:
-		*s = InfoNotification //we won't make a big deal about it
-	}
-	return nil
-}
-
-func (cg *ConfigGopher) SendConfig(config ControllersConfig) error {
-	//TODO POST
-	return nil
-}
-
-// NotifyServer
-// Send the server a message
-// If the server can't be contacted, queue the message in a text file
-// maybe we can restructure all the logging code to use structured messages (with error levels). Above a certain error level could be automatically reported
-func (cg *ConfigGopher) NotifyServer(message string, urgency ServerNotificationUrgency) {
-	fmt.Println("NOTIFYING SERVER: ", message)
-	if cg.NotifyOutput != nil {
-		_, _ = cg.NotifyOutput.Write([]byte(message))
-	}
+type Controller struct {
+	Name                    string                `json:"name"`
+	ThermometerPath         string                `json:"thermometerPath"`
+	ControlType             string                `json:"controlType"`
+	SwitchHosts             []string              `json:"switchHosts"`
+	TemperatureSchedule     map[time.Time]float32 `json:"temperatureSchedule"`
+	DisableFreezeProtection bool                  `json:"disableFreezeProtection"`
 }
 
 func (cg *ConfigGopher) GetSourceKind() (ConfigSource, bool) {
@@ -233,4 +185,23 @@ func hashConfig(c ControllersConfig) []byte {
 		return nil
 	}
 	return b.Bytes()
+}
+
+type ConfigSource int
+
+const (
+	ConfigSourceLocalFile ConfigSource = iota + 1
+	ConfigSourceServer
+)
+
+func (c ConfigSource) String() string {
+	switch c {
+	case ConfigSourceLocalFile:
+		return "local file"
+	case ConfigSourceServer:
+		return "server"
+	default:
+		panic(fmt.Sprintf("Unknown config source: %#v", c))
+	}
+	return ""
 }

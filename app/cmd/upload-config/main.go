@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"github.com/jroedel/tmpcontrol"
+	"github.com/jroedel/tmpcontrol/business/busconfiggopher"
 	"os"
 )
 
@@ -24,6 +24,6 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	cg := tmpcontrol.ConfigGopher{ServerRoot: serverRoot, ClientId: clientId}
+	cg := busconfiggopher.ConfigGopher{ServerRoot: serverRoot, ClientId: clientId}
 
 }

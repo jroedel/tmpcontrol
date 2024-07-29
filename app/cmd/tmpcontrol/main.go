@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/jroedel/tmpcontrol"
+	"github.com/jroedel/tmpcontrol/business/busconfiggopher"
+	"github.com/jroedel/tmpcontrol/foundation/sms"
 	"log"
 	"os"
 	"strings"
@@ -78,8 +80,8 @@ func main() {
 	}
 
 	kasaController := tmpcontrol.HeatOrCoolController(tmpcontrol.NewKasaHeatOrCoolController(kasaPath))
-	adminNotifier := tmpcontrol.SmsNotifier{}
-	cg := tmpcontrol.ConfigGopher{ServerRoot: configServerRootUrl, ClientId: clientIdentifier, LocalConfigPath: localConfigPath, ConfigFetchInterval: time.Duration(configFetchIntervalInSeconds) * time.Second, NotifyOutput: adminNotifier}
+	adminNotifier := sms.SmsNotifier{}
+	cg := busconfiggopher.ConfigGopher{ServerRoot: configServerRootUrl, ClientId: clientIdentifier, LocalConfigPath: localConfigPath, ConfigFetchInterval: time.Duration(configFetchIntervalInSeconds) * time.Second, NotifyOutput: adminNotifier}
 	cl := tmpcontrol.NewControlLooper(&cg, kasaController, logger)
 	cl.StartControlLoop()
 }

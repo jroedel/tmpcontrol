@@ -3,6 +3,7 @@ package tmpcontrol_test
 import (
 	"encoding/json"
 	"github.com/jroedel/tmpcontrol"
+	"github.com/jroedel/tmpcontrol/business/busconfiggopher"
 	"log"
 	"os"
 	"path"
@@ -62,7 +63,7 @@ func TestServerDB(t *testing.T) {
 	if !ok {
 		t.Fatal("We expected the config we just stored")
 	}
-	if !tmpcontrol.AreConfigsEqual(testConfig, returnedConfig) {
+	if !busconfiggopher.AreConfigsEqual(testConfig, returnedConfig) {
 		t.Fatal("We expected the config to be the same")
 	}
 
@@ -79,7 +80,7 @@ func TestServerDB(t *testing.T) {
 	if !ok {
 		t.Fatal("We expected the config we just stored")
 	}
-	if !tmpcontrol.AreConfigsEqual(config2, returnedConfig2) {
+	if !busconfiggopher.AreConfigsEqual(config2, returnedConfig2) {
 		t.Fatal("We expected the config to be the same")
 	}
 
