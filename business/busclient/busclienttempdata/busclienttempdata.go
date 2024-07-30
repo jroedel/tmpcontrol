@@ -85,7 +85,7 @@ func (th *TempHandler) NotifyAdminIfNoNewTempDataPerInterval(ctx context.Context
 		select {
 		case <-tick.C:
 			if th.tempDataReceivedPerInterval == 0 {
-				th.notify.NotifyAdmin("We haven't had contact with the thermometer for controller %s for %s")
+				th.notify.NotifyAdmin("We haven't had contact with the thermometer for controller %s for %s", clienttoserverapi.SeriousNotification)
 			}
 		case <-ctx.Done():
 			return

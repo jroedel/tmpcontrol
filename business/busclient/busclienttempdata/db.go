@@ -32,7 +32,7 @@ func (th *TempHandler) create(temp Temperature) error {
 		temp.DesiredTemperatureInF,
 		temp.IsHeatingNotCooling,
 		temp.TurningOnNotOff,
-		temp.HostsPipeSeparated,
+		strings.Join(temp.SuccessfulHostsControlled, "|"),
 		false)
 	if err != nil {
 		return err
@@ -59,8 +59,9 @@ func (th *TempHandler) queryHasNotBeenSentToServer() ([]Temperature, error) {
 			HasBeenSentToServer = 0`
 
 	var tempTimestampStr int64
+	var tempHostsPipeSeparated string
 	var tempTmpLog Temperature
-
+	//TODO fix HostsPipeSeparated
 	results, err := th.db.Query(query,
 		[]any{}, //no params
 		&tempTmpLog.DbAutoId,
@@ -71,7 +72,7 @@ func (th *TempHandler) queryHasNotBeenSentToServer() ([]Temperature, error) {
 		&tempTmpLog.DesiredTemperatureInF,
 		&tempTmpLog.IsHeatingNotCooling,
 		&tempTmpLog.TurningOnNotOff,
-		&tempTmpLog.HostsPipeSeparated)
+		&tempHostsPipeSeparated)
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
 	}
@@ -86,7 +87,7 @@ func (th *TempHandler) queryHasNotBeenSentToServer() ([]Temperature, error) {
 		temps[i].DesiredTemperatureInF = result[i].(float32)
 		temps[i].IsHeatingNotCooling = result[i].(bool)
 		temps[i].TurningOnNotOff = result[i].(bool)
-		temps[i].HostsPipeSeparated = result[i].(string)
+		temps[i].SuccessfulHostsControlled = strings.Split(result[i].(string), "|")
 	}
 
 	return temps, nil

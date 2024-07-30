@@ -11,6 +11,7 @@ import (
 	"github.com/jroedel/tmpcontrol/foundation/brewfatherapi"
 	"github.com/jroedel/tmpcontrol/foundation/clientsqlite"
 	"github.com/jroedel/tmpcontrol/foundation/clienttoserverapi"
+	"github.com/jroedel/tmpcontrol/foundation/ctlkasaplug"
 	"github.com/jroedel/tmpcontrol/foundation/ds18b20therm"
 	"github.com/jroedel/tmpcontrol/foundation/sms"
 	"log"
@@ -104,15 +105,20 @@ func main() {
 
 	th, err := busclienttempdata.New(db, cln, bfapi)
 	if err != nil {
-		logger.Fatalf("Error creating temp handler: %v", err)
+		logger.Fatalf("create temp handler: %v", err)
 	}
 
 	cg, err := busconfiggopher.New(cln, localConfigPath, notify)
 	if err != nil {
-		logger.Fatalf("Error creating config gopher: %v", err)
+		logger.Fatalf("create config gopher: %v", err)
 	}
 
-	app, err := apptmpcontrol.New(cg, th, logger, notify)
+	kasa, err := ctlkasaplug.New(kasaPath)
+	if err != nil {
+		logger.Fatalf("create kasa: %v", err)
+	}
+
+	app, err := apptmpcontrol.New(cg, th, kasa, logger, notify)
 	if err != nil {
 		logger.Fatalf("Error creating app: %v", err)
 	}
