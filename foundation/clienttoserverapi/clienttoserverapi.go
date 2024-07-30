@@ -1,9 +1,14 @@
 // Package notifyserver provides client functionality to send notification messages. May also be used by the server code to decode input
-package notifyserver
+package clienttoserverapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
 )
 
 type NotifyApiMessage struct {
@@ -12,19 +17,57 @@ type NotifyApiMessage struct {
 	Urgency  Urgency `json:"urgency"`
 }
 
-// should this be pointer/value???
-// should this be exported or not???
 type Client struct {
 	serverBaseUrl string
+	clientId      string
 }
 
-func NewClient(serverBaseUrl string) *Client {
-	return &Client{serverBaseUrl: serverBaseUrl}
+func NewClient(serverBaseUrl string, clientId string) *Client {
+	return &Client{serverBaseUrl: serverBaseUrl, clientId: clientId}
+}
+
+const stdTimeout = time.Second * 5
+
+func (s *Client) GetConfig() (ConfigApiMessage, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), stdTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", s.serverBaseUrl+"/configuration", nil)
+	if err != nil {
+		return ConfigApiMessage{}, fmt.Errorf("create config get request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ConfigApiMessage{}, fmt.Errorf("get config: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ConfigApiMessage{}, fmt.Errorf("read config: %w", err)
+	}
+	var config ConfigApiMessage
+	err = json.Unmarshal(body, &config)
+	if err != nil {
+		return ConfigApiMessage{}, fmt.Errorf("parse config: %w", err)
+	}
+	return config, nil
+}
+
+func (s *Client) SendTemperature(data TemperatureApiMessage) error {
+	//TODO
+	return nil
 }
 
 func (s *Client) Notify(msg NotifyApiMessage) error {
 	//TODO
 	return nil
+}
+
+type ConfigApiMessage struct {
+	//TODO
+}
+
+type TemperatureApiMessage struct {
+	//TODO
 }
 
 type Urgency int

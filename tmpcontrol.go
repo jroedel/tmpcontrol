@@ -68,7 +68,7 @@ func (cl *ControlLooper) StartControlLoop() {
 	//isConfigFetchFailing used to track when to notify the server of issues
 	isConfigFetchFailing := false
 	cl.Logger.Printf("%s Successfully fetched initial config from %s; we'll continue to poll every %d seconds\n%+v\n", stdTimestamp(), source, cl.Cg.ConfigFetchInterval, config)
-	cl.Cg.NotifyServer(fmt.Sprintf("%s: we got some config and we're starting up", cl.Cg.ClientId), InfoNotification)
+	cl.Cg.NotifyServer(fmt.Sprintf("%s: we got some config and we're starting up", cl.Cg.clientId), InfoNotification)
 	cl.Logger.Printf("%s Beginning control loop for %d controller(s)\n", stdTimestamp(), len(config.Controllers))
 
 	//enumerate hosts to track if too much time has passed and failingState
@@ -117,7 +117,7 @@ func (cl *ControlLooper) StartControlLoop() {
 				//see if we need to notify the server of issues
 				if !isConfigFetchFailing && lastConfigFetched.Add(intervalNotifyServerForConfigFetch).Before(time.Now()) {
 					isConfigFetchFailing = true
-					cl.Cg.NotifyServer(fmt.Sprintf("%s: we haven't received config in %s", cl.Cg.ClientId, intervalNotifyServerForConfigFetch.String()), ProblemNotification)
+					cl.Cg.NotifyServer(fmt.Sprintf("%s: we haven't received config in %s", cl.Cg.clientId, intervalNotifyServerForConfigFetch.String()), ProblemNotification)
 				}
 			} else {
 				cl.Logger.Printf("%s We successfully fetched config from %s\n", stdTimestamp(), source)
@@ -132,7 +132,7 @@ func (cl *ControlLooper) StartControlLoop() {
 
 				if isConfigFetchFailing { //we just recovered from the config fetch failing
 					isConfigFetchFailing = false
-					cl.Cg.NotifyServer(fmt.Sprintf("%s: we have recovered from config retrieval issues after %s", cl.Cg.ClientId, timeElapsedSinceLastConfigFetched.String()), ProblemNotification)
+					cl.Cg.NotifyServer(fmt.Sprintf("%s: we have recovered from config retrieval issues after %s", cl.Cg.clientId, timeElapsedSinceLastConfigFetched.String()), ProblemNotification)
 				}
 			}
 		}

@@ -14,7 +14,7 @@ DB schema
 
 Config
 ================
-ClientId TEXT
+clientId TEXT
 Config TEXT
 UpdatedAt INTEGER
 
@@ -22,7 +22,7 @@ Notifications
 =====================
 NotificationId PRIMARY KEY
 PostedAt INTEGER
-ClientId TEXT
+clientId TEXT
 Message TEXT
 Severity INTEGER
 
@@ -62,14 +62,14 @@ func NewSqliteServerDbFromFilename(filename string, logger Logger) (SqliteServer
 		//Id is an autoincrement field and shouldn't be specified when inserting rows
 		//Timestamp must be stored as RFC3339
 		`CREATE TABLE IF NOT EXISTS tmpconfig (
-	          ClientId TEXT PRIMARY KEY,
+	          clientId TEXT PRIMARY KEY,
     		  ConfigJson TEXT NOT NULL,
 	          UpdatedAt INTEGER NOT NULL
 	       );`,
 		`CREATE TABLE IF NOT EXISTS notifications (
 	          NotificationId TEXT PRIMARY KEY,
 	          ReportedAt INTEGER NOT NULL,
-	          ClientId TEXT NOT NULL,
+	          clientId TEXT NOT NULL,
 	          Message TEXT NOT NULL,
 	          Severity INTEGER NOT NULL,
 	          HasUserBeenNotified INTEGER
@@ -120,7 +120,7 @@ func (dbo SqliteServerDb) PutNotification(clientId string, note Notification) er
 	ctx, cancel := context.WithTimeout(context.Background(), maxSqlExecutionTime)
 	defer cancel()
 
-	result, err := dbo.db.ExecContext(ctx, "INSERT INTO notifications (ReportedAt, ClientId, Message, Severity, HasUserBeenNotified) VALUES ($1, $2, $3, $4, $5)", note.ReportedAt.Unix(), note.ClientId, note.Message, note.Severity, note.HasUserBeenNotified)
+	result, err := dbo.db.ExecContext(ctx, "INSERT INTO notifications (ReportedAt, clientId, Message, Severity, HasUserBeenNotified) VALUES ($1, $2, $3, $4, $5)", note.ReportedAt.Unix(), note.ClientId, note.Message, note.Severity, note.HasUserBeenNotified)
 	if err != nil {
 		return err
 	}
@@ -139,7 +139,7 @@ func (dbo SqliteServerDb) PutNotification(clientId string, note Notification) er
 func (dbo SqliteServerDb) GetConfig(clientId string) (ControllersConfig, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), maxSqlExecutionTime)
 	defer cancel()
-	row := dbo.db.QueryRowContext(ctx, "SELECT ConfigJson FROM tmpconfig WHERE ClientId = ?", clientId)
+	row := dbo.db.QueryRowContext(ctx, "SELECT ConfigJson FROM tmpconfig WHERE clientId = ?", clientId)
 	var configBytes []byte
 	err := row.Scan(&configBytes)
 	if err != nil {
@@ -186,7 +186,7 @@ func (dbo SqliteServerDb) CreateOrUpdateConfig(clientId string, config Controlle
 func (dbo SqliteServerDb) existsClientIdConfig(clientId string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), maxSqlExecutionTime)
 	defer cancel()
-	row := dbo.db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM tmpconfig WHERE ClientId = $1)", clientId)
+	row := dbo.db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM tmpconfig WHERE clientId = $1)", clientId)
 	var exists bool
 	err := row.Scan(&exists)
 	if err != nil {
@@ -202,7 +202,7 @@ func (dbo SqliteServerDb) existsClientIdConfig(clientId string) (bool, error) {
 func (dbo SqliteServerDb) updateConfig(clientId string, config []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), maxSqlExecutionTime)
 	defer cancel()
-	result, err := dbo.db.ExecContext(ctx, "UPDATE tmpconfig SET ConfigJson = $1 WHERE ClientId = $2", config, clientId)
+	result, err := dbo.db.ExecContext(ctx, "UPDATE tmpconfig SET ConfigJson = $1 WHERE clientId = $2", config, clientId)
 	if err != nil {
 		return err
 	}
@@ -223,7 +223,7 @@ func (dbo SqliteServerDb) createConfig(clientId string, config []byte) error {
 	defer cancel()
 
 	now := time.Now()
-	result, err := dbo.db.ExecContext(ctx, "INSERT INTO tmpconfig (ClientId, ConfigJson, UpdatedAt) VALUES ($1, $2, $3)", clientId, config, now.Unix())
+	result, err := dbo.db.ExecContext(ctx, "INSERT INTO tmpconfig (clientId, ConfigJson, UpdatedAt) VALUES ($1, $2, $3)", clientId, config, now.Unix())
 	if err != nil {
 		return err
 	}

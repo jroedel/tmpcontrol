@@ -12,21 +12,21 @@ func TestConfigGopher_HasError(t *testing.T) {
 		t.Error("expected error since we didn't specify server info nor local file")
 	}
 
-	cg2 := busconfiggopher.ConfigGopher{ServerRoot: "localhost"}
+	cg2 := busconfiggopher.ConfigGopher{serverRoot: "localhost"}
 	err = cg2.HasError()
 	if err == nil {
 		t.Error("expected error since we specified server root, but not client identifier")
 	}
 
-	cg3 := busconfiggopher.ConfigGopher{ServerRoot: "localhost", ClientId: "test-id"}
+	cg3 := busconfiggopher.ConfigGopher{serverRoot: "localhost", clientId: "test-id"}
 	err = cg3.HasError()
 	if err != nil {
 		t.Error("expected no error since we specified server root and client identifier")
 	}
 
-	cg4 := busconfiggopher.ConfigGopher{ServerRoot: "localhost", ClientId: "test id"}
+	cg4 := busconfiggopher.ConfigGopher{serverRoot: "localhost", clientId: "test id"}
 	err = cg4.HasError()
 	if err == nil {
-		t.Error("expected error since spaces in the ClientId are prohibited")
+		t.Error("expected error since spaces in the clientId are prohibited")
 	}
 }

@@ -24,6 +24,6 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	cg := busconfiggopher.ConfigGopher{ServerRoot: serverRoot, ClientId: clientId}
+	cg := busconfiggopher.ConfigGopher{serverRoot: serverRoot, clientId: clientId}
 
 }

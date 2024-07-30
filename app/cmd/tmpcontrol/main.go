@@ -81,7 +81,7 @@ func main() {
 
 	kasaController := tmpcontrol.HeatOrCoolController(tmpcontrol.NewKasaHeatOrCoolController(kasaPath))
 	adminNotifier := sms.SmsNotifier{}
-	cg := busconfiggopher.ConfigGopher{ServerRoot: configServerRootUrl, ClientId: clientIdentifier, LocalConfigPath: localConfigPath, ConfigFetchInterval: time.Duration(configFetchIntervalInSeconds) * time.Second, NotifyOutput: adminNotifier}
+	cg := busconfiggopher.ConfigGopher{serverRoot: configServerRootUrl, clientId: clientIdentifier, localConfigPath: localConfigPath, ConfigFetchInterval: time.Duration(configFetchIntervalInSeconds) * time.Second, NotifyOutput: adminNotifier}
 	cl := tmpcontrol.NewControlLooper(&cg, kasaController, logger)
 	cl.StartControlLoop()
 }

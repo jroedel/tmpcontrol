@@ -1,3 +1,4 @@
+// Package busconfiggopher fetches and validates controller config
 package busconfiggopher
 
 import (
@@ -6,26 +7,30 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
+	"github.com/jroedel/tmpcontrol/foundation/clienttoserverapi"
 	"os"
-	"regexp"
 	"slices"
-	"strings"
 	"time"
 )
 
 type ConfigGopher struct {
-	LocalConfigPath string
-	//ServerRoot includes the protocol scheme, hostname and port. Trailing '/' is optional
-	ServerRoot string
-	//ClientId the client identifier to let the server know who we are
-	ClientId            string
-	ConfigFetchInterval time.Duration
+	cln *clienttoserverapi.Client
+
+	//if both parameters are specified, the local path will be a fallback,
+	//The contents of the local config file will be overridden with server
+	//data when we get it successfully
+	localConfigPath string
 }
 
-// ClientIdentifiersRegex pattern to which clientIdentifiers and controllerNames should adhere
-var ClientIdentifiersRegex = regexp.MustCompile(`^[-a-zA-Z0-9]{3,50}$`)
+func New(cln *clienttoserverapi.Client, localConfigPath string) (*ConfigGopher, error) {
+	if cln == nil && localConfigPath == "" {
+		return nil, fmt.Errorf("ConfigGopher: we require either a client or localConfigPath")
+	}
+	return &ConfigGopher{
+		cln:             cln,
+		localConfigPath: localConfigPath,
+	}, nil
+}
 
 type ControllersConfig struct {
 	Controllers []Controller `json:"controllers"`
@@ -40,101 +45,61 @@ type Controller struct {
 	DisableFreezeProtection bool                  `json:"disableFreezeProtection"`
 }
 
-func (cg *ConfigGopher) GetSourceKind() (ConfigSource, bool) {
-	if err := cg.HasError(); err != nil {
-		return 0, false
+func (cg *ConfigGopher) GetSourceKind() ConfigSource {
+	if cg.cln != nil {
+		return ConfigSourceServer
+	} else if cg.localConfigPath != "" {
+		return ConfigSourceLocalFile
 	}
-	if cg.ServerRoot != "" {
-		return ConfigSourceServer, true
-	} else if cg.LocalConfigPath != "" {
-		return ConfigSourceLocalFile, true
-	}
-	return 0, false
+	panic("ConfigGopher: GetSourceKind: this code path should be impossible")
 }
 
+// TODO REREAD THIS WHOLE FUNCTION FOR LOGIC ERRORS
 func (cg *ConfigGopher) FetchConfig() (ControllersConfig, ConfigSource, error) {
-	if err := cg.HasError(); err != nil {
-		return ControllersConfig{}, 0, err
-	}
-
 	//TODO notify user/server if there are no configured switchHosts
-	if cg.ServerRoot != "" {
+	if cg.cln != nil {
 		config, err := cg.fetchConfigFromServer()
+		if err != nil {
+			err = fmt.Errorf("fetch config: %v", err)
+		} else {
+			err = ValidateConfig(config)
+			if err != nil {
+				err = fmt.Errorf("validate config from server: %w", err)
+			} else {
+				return config, ConfigSourceServer, nil
+			}
+		}
+
+		//TODO if we get an error and have a fallback path, read it
 		return config, ConfigSourceServer, err
-	} else if cg.LocalConfigPath != "" {
-		//fetch from file
-		config, err := cg.fetchConfigFromFile()
-		return config, ConfigSourceLocalFile, err
 	}
 
-	//TODO validate configuration. for example, no duplicate Controller names, also "heat"/"cool"
-	return ControllersConfig{}, 0, fmt.Errorf("please specify a configuration file path or control server url")
-}
-
-func (cg *ConfigGopher) HasError() error {
-	//we need a clientIdentifier if a server url has been specified by user
-	if cg.ServerRoot != "" {
-		//handle a blank clientIdentifier
-		if cg.ClientId == "" {
-			return fmt.Errorf("ConfigGopher: we received a blank ClientId")
-		}
-		//validate clientIdentifier
-		if !ClientIdentifiersRegex.MatchString(cg.ClientId) {
-			return fmt.Errorf("ConfigGopher: ClientId must match the regular expression: %s", ClientIdentifiersRegex.String())
-		}
-	} else if cg.LocalConfigPath == "" {
-		return fmt.Errorf("ConfigGopher: we require either a ServerRoot or LocalConfigPath")
+	//fetch from file
+	config, err := cg.fetchConfigFromFile()
+	err = ValidateConfig(config)
+	if err != nil {
+		err = fmt.Errorf("validate config from local file: %w", err)
+		return ControllersConfig{}, ConfigSourceLocalFile, err
+	} else {
+		return config, ConfigSourceServer, nil
 	}
-	return nil
 }
 
 func (cg *ConfigGopher) fetchConfigFromServer() (ControllersConfig, error) {
-	err := cg.HasError()
+	result, err := cg.cln.GetConfig()
 	if err != nil {
-		return ControllersConfig{}, err
+		return ControllersConfig{}, fmt.Errorf("fetchConfigFromServer: %v", err)
 	}
-	url := cg.getServerRequestUrl()
-
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return ControllersConfig{}, err
-	}
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		return ControllersConfig{}, err
-	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			return
-		}
-	}(response.Body)
-	if response.StatusCode != http.StatusOK {
-		return ControllersConfig{}, fmt.Errorf("server responded with %d", response.StatusCode)
-	}
-	decoder := json.NewDecoder(response.Body)
-	var config ControllersConfig
-	err = decoder.Decode(&config)
-	if err != nil {
-		return ControllersConfig{}, err
-	}
-	return config, nil
+	return convertServerResponseToOurConfigModel(result)
 }
 
-func (cg *ConfigGopher) getServerRequestUrl() string {
-	//TODO what should happen if there's no server root??
-
-	url := cg.ServerRoot
-	if !strings.HasSuffix(url, "/") {
-		url = url + "/"
-	}
-	url = url + "configuration/" + cg.ClientId
-	return url
+func convertServerResponseToOurConfigModel(msg clienttoserverapi.ConfigApiMessage) (ControllersConfig, error) {
+	//TODO
+	return ControllersConfig{}, nil
 }
 
 func (cg *ConfigGopher) fetchConfigFromFile() (ControllersConfig, error) {
-	file, err := os.Open(cg.LocalConfigPath)
+	file, err := os.Open(cg.localConfigPath)
 	if err != nil {
 		return ControllersConfig{}, err
 	}
@@ -162,6 +127,11 @@ func (cg *ConfigGopher) fetchConfigFromFile() (ControllersConfig, error) {
 		thermometers = append(thermometers, controller.ThermometerPath)
 	}
 	return config, nil
+}
+
+func ValidateConfig(config ControllersConfig) error {
+	//TODO
+	return nil
 }
 
 // AreConfigsEqual Based on https://stackoverflow.com/questions/48253423/unique-hash-from-struct
