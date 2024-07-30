@@ -22,7 +22,7 @@ func init() {
 func main() {
 	flag.Parse()
 
-	// Create logger
+	// create logger
 	logger := log.New(os.Stdout, "[tmpserver] ", 0)
 
 	s, err := server.New("tmpserver.db", logger)

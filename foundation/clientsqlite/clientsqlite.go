@@ -95,3 +95,11 @@ func (sw *ClientSqlite) QueryRow(query string, params []any, fields ...any) erro
 	row := sw.db.QueryRowContext(ctx, query, params...)
 	return row.Scan(fields...)
 }
+
+// ExecuteQuery no result is returned
+func (sw *ClientSqlite) ExecuteQuery(query string, params []any) error {
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+	_, err := sw.db.ExecContext(ctx, query, params...)
+	return fmt.Errorf("execute query %q: %w", query, err)
+}

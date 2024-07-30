@@ -3,7 +3,7 @@ package tmpcontrol
 import (
 	"errors"
 	"fmt"
-	"github.com/jroedel/tmpcontrol/business/busconfiggopher"
+	"github.com/jroedel/tmpcontrol/business/busclient/busconfiggopher"
 	"os/exec"
 	"strings"
 	"time"

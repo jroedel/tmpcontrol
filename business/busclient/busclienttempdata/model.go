@@ -1,4 +1,4 @@
-package busclient
+package busclienttempdata
 
 import "time"
 

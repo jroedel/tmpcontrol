@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/jroedel/tmpcontrol"
-	"github.com/jroedel/tmpcontrol/business/busconfiggopher"
+	"github.com/jroedel/tmpcontrol/business/busclient/busconfiggopher"
 	"github.com/jroedel/tmpcontrol/foundation/sms"
 	"log"
 	"os"
@@ -68,7 +68,7 @@ func main() {
 	//	idsToMarkSentToServer = append(idsToMarkSentToServer, obj.DbAutoId)
 	//}
 	//fmt.Printf("Ids to mark sent to server: %#v\n", idsToMarkSentToServer)
-	//db.MarkTmpLogsAsSentToServer(idsToMarkSentToServer)
+	//db.markTmpLogsAsSentToServer(idsToMarkSentToServer)
 	//return
 	tempReader := tmpcontrol.NewDS18B20Reader(logger)
 	fmt.Printf("Assuming we're on a Raspberry Pi, we'll check %#v for connected thermometers\n", tmpcontrol.ThermometerDevicesRootPath)

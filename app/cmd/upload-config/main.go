@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"github.com/jroedel/tmpcontrol/business/busconfiggopher"
+	"github.com/jroedel/tmpcontrol/business/busclient/busconfiggopher"
 	"os"
 )
 

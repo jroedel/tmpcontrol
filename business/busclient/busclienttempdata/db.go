@@ -1,36 +1,13 @@
-package busclient
+package busclienttempdata
 
 import (
 	"fmt"
-	"math/rand"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/jroedel/tmpcontrol/foundation/clientsqlite"
 )
 
-type Business struct {
-	cln         *clientsqlite.ClientSqlite
-	executionID string
-}
-
-func New(cln *clientsqlite.ClientSqlite) *Business {
-	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	const lenExecutionID = 8
-
-	b := make([]byte, lenExecutionID)
-	for i := range b {
-		b[i] = letterBytes[rand.Int63()%int64(len(letterBytes))]
-	}
-
-	return &Business{
-		cln:         cln,
-		executionID: string(b),
-	}
-}
-
-func (b *Business) Create(temp Temperature) error {
+func (th *TempHandler) create(temp Temperature) error {
 	const query = `
 		INSERT INTO tmplog
 		(
@@ -47,8 +24,8 @@ func (b *Business) Create(temp Temperature) error {
 		VALUES
 			(?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	err := b.cln.Create(query,
-		b.executionID,
+	err := th.db.Create(query,
+		th.executionID,
 		temp.ControllerName,
 		temp.Timestamp.Unix(),
 		temp.TemperatureInF,
@@ -64,7 +41,7 @@ func (b *Business) Create(temp Temperature) error {
 	return nil
 }
 
-func (b *Business) QueryHasNotBeenSentToServer() ([]Temperature, error) {
+func (th *TempHandler) queryHasNotBeenSentToServer() ([]Temperature, error) {
 	const query = `
 		SELECT
 			Id,
@@ -84,7 +61,7 @@ func (b *Business) QueryHasNotBeenSentToServer() ([]Temperature, error) {
 	var tempTimestampStr int64
 	var tempTmpLog Temperature
 
-	results, err := b.cln.Query(query,
+	results, err := th.db.Query(query,
 		[]any{}, //no params
 		&tempTmpLog.DbAutoId,
 		&tempTmpLog.ExecutionIdentifier,
@@ -115,19 +92,31 @@ func (b *Business) QueryHasNotBeenSentToServer() ([]Temperature, error) {
 	return temps, nil
 }
 
-func (cln *ClientDB) GetAverageRecentTemperature(controllerName string, d time.Duration) (float32, error) {
+func (th *TempHandler) getAverageRecentTemperature(controllerName string, d time.Duration) (float32, error) {
 	timestampRef := time.Now().Add(-d).Unix()
-	row := dbo.db.QueryRow("SELECT AVG(TemperatureInF) FROM tmplog WHERE ExecutionIdentifier = ? AND ControllerName = ? AND Timestamp >= ?", dbo.currentExecutionIdentifier, controllerName, timestampRef)
+	query := `
+		SELECT 
+		    AVG(TemperatureInF)
+		FROM tmplog 
+		WHERE 
+		    ExecutionIdentifier = ?
+		  AND ControllerName = ?
+		  AND Timestamp >= ?`
+	params := []any{
+		th.executionID,
+		controllerName,
+		timestampRef,
+	}
 	var avgTemp float32
-	err := row.Scan(&avgTemp)
+	err := th.db.QueryRow(query, params, &avgTemp)
 	if err != nil {
 		return 0, err
 	}
 	return avgTemp, nil
 }
 
-// MarkTmpLogsAsSentToServer TODO implement a limit to how many can be marked complete at at time
-func (cln *ClientDB) MarkTmpLogsAsSentToServer(ids []int) error {
+// markTmpLogsAsSentToServer TODO implement a limit to how many can be marked complete at at time
+func (th *TempHandler) markTmpLogsAsSentToServer(ids []int) error {
 	idListBuilder := strings.Builder{}
 
 	writeLeadingComma := false
@@ -141,7 +130,11 @@ func (cln *ClientDB) MarkTmpLogsAsSentToServer(ids []int) error {
 
 	idList := idListBuilder.String()
 	fmt.Printf("Here's the list of Ids we'll mark as sent: %#v\n", idList)
-	cmd := "UPDATE tmplog SET HasBeenSentToServer = TRUE WHERE Id IN (" + idList + ")"
-	_, err := dbo.db.Exec(cmd)
+	query := fmt.Sprintf(`
+		UPDATE tmplog
+		SET HasBeenSentToServer = TRUE
+		WHERE Id IN (%s)`,
+		idList)
+	err := th.db.ExecuteQuery(query, []any{})
 	return err
 }

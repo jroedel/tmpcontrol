@@ -3,7 +3,7 @@ package tmpcontrol_test
 import (
 	"encoding/json"
 	"github.com/jroedel/tmpcontrol"
-	"github.com/jroedel/tmpcontrol/business/busconfiggopher"
+	"github.com/jroedel/tmpcontrol/business/busclient/busconfiggopher"
 	"log"
 	"os"
 	"path"
