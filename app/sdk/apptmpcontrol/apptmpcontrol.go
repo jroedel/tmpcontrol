@@ -4,16 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"os/exec"
+	"time"
+
 	"github.com/jroedel/tmpcontrol/business/busclient/busadminnotifier"
 	"github.com/jroedel/tmpcontrol/business/busclient/busclienttempdata"
 	"github.com/jroedel/tmpcontrol/business/busclient/busconfiggopher"
 	"github.com/jroedel/tmpcontrol/foundation/clienttoserverapi"
 	"github.com/jroedel/tmpcontrol/foundation/ctlkasaplug"
 	"github.com/jroedel/tmpcontrol/foundation/ds18b20therm"
-	"log"
-	"os/exec"
-	"reflect"
-	"time"
 )
 
 type App struct {
@@ -45,93 +45,129 @@ func New(cg *busconfiggopher.ConfigGopher, th *busclienttempdata.TempHandler, ka
 
 func (app *App) Start(ctx context.Context) error {
 	app.logger.Println("Fetching initial config")
+
 	config, source, err := app.cg.FetchConfig()
 	if err != nil {
-		//if the config couldn't be fetched the first time, the application will exit; later on, config reads will be tolerated
-		panic(fmt.Sprintf("%s", err.Error()))
+		return fmt.Errorf("%s", err)
 	}
+
+	// NEED MUTEX HERE
 	app.currentConfig = config
+
 	app.logger.Printf("Successfully fetched initial config from %s; we'll continue to poll every 60 seconds\n%+v\n", source, config)
 	app.notify.NotifyAdmin("we got some config and we're starting up", clienttoserverapi.InfoNotification)
 
 	const configFetchInterval = 60 * time.Second
+
 	go func() {
 		timer := time.NewTimer(configFetchInterval)
 		defer timer.Stop()
+
 		for {
 			select {
 			case <-timer.C:
-				config, _, err = app.cg.FetchConfig()
+				config, _, err := app.cg.FetchConfig()
 				if err != nil {
-					app.logger.Printf("fetching config: %s", err.Error())
+					app.logger.Printf("fetching config: %s", err)
 				}
+
+				// NEED RWMUTEX HERE AND ON ANY READ
 				app.currentConfig = config
+
 			case <-ctx.Done():
 				app.logger.Println("Context canceled")
 				return
 			}
 		}
 	}()
-	//TODO notify admin if it's been more than a few minutes without being able to get new config
-	const intervalNotifyServerForConfigFetch = 15 * time.Minute
-	err = app.cg.NotifyAdminIfWeHaventReceivedConfigInInterval(ctx, intervalNotifyServerForConfigFetch)
-	if err != nil {
-		app.logger.Fatalf("NotifyAdminIfWeHaventReceivedConfigInInterval: %s", err.Error())
-	}
+
+	go func() {
+		// // TODO notify admin if it's been more than a few minutes without being able to get new config
+		// const intervalNotifyServerForConfigFetch = 15 * time.Minute
+		// err = app.cg.NotifyAdminIfWeHaventReceivedConfigInInterval(ctx, intervalNotifyServerForConfigFetch)
+		// if err != nil {
+		// 	return fmt.Errorf("NotifyAdminIfWeHaventReceivedConfigInInterval: %s", err)
+		// }
+		for {
+			<-ctx.Done()
+			app.logger.Println("Context canceled")
+		}
+	}()
 
 	app.logger.Printf("Beginning control loop for %d controller(s)\n", len(config.Controllers))
-	go app.run(ctx)
+
+	app.Run(ctx)
+
 	return nil
 }
 
-func (app *App) run(ctx context.Context) {
-	returnChan := make(chan temperatureControlReturn)
+// Run will start the process of doing the actual work.
+func (app *App) Run(ctx context.Context) {
 	const loopInterval = 15 * time.Second
 	timer := time.NewTicker(loopInterval)
-	loopStart := time.Now()
-	// Loop forever
-	select {
-	case <-timer.C:
-		//make sure the config doesn't get updated while we're in the middle of our work
-		config := app.currentConfig
-		for i := range config.Controllers {
-			//TODO set a timeout of 12 seconds
-			//TODO how can we notify the server when a new temperature rule has been applied for the first time
-			go app.temperatureControl(returnChan, app.currentConfig.Controllers[i])
-		}
 
-		//the idea behind this 2nd loop is to wait for each of the goroutines spun up to finish and report back
-		for range config.Controllers {
-			//How do we make it so if one loop fails, the other can keep on ticking?
-			returnValue := <-returnChan
+	for {
+		timer.Reset(loopInterval)
+		loopStart := time.Now()
 
-			if returnValue.err != nil {
-				app.logger.Printf("[%s] Error in temperatureControl loop: %s\n", returnValue.controllerConfig.Name, returnValue.err.Error())
+		select {
+		case <-timer.C:
+
+			//make sure the config doesn't get updated while we're in the middle of our work
+			// NEED MUTEX READ HERE
+			config := app.currentConfig
+
+			returnChan := make(chan temperatureControlReturn, len(config.Controllers))
+
+			for i := range config.Controllers {
+
+				//TODO set a timeout of 12 seconds
+				//TODO how can we notify the server when a new temperature rule has been applied for the first time
+				go func() {
+					tcr := app.temperatureControl(ctx, app.currentConfig.Controllers[i])
+					if ctx.Err() != nil {
+						returnChan <- tcr
+					}
+				}()
 			}
 
-			//TODO is this the right compare?
-			if reflect.DeepEqual(busclienttempdata.Temperature{}, returnValue.temperature) {
+			//the idea behind this 2nd loop is to wait for each of the goroutines spun up to finish and report back
+			for range len(config.Controllers) {
+				var returnValue temperatureControlReturn
+
+				// How do we make it so if one loop fails, the other can keep on ticking?
+				select {
+				case returnValue = <-returnChan:
+
+				case <-ctx.Done():
+					app.logger.Println("Requested to cancel work")
+					return
+				}
+
+				if returnValue.err != nil {
+					app.logger.Printf("[%s] Error in temperatureControl loop: %s\n", returnValue.controllerConfig.Name, returnValue.err.Error())
+					continue
+				}
+
 				err := app.th.HandleNewTempData(returnValue.temperature)
 				if err != nil {
 					app.logger.Printf("[%s] Error persisting log to sqlite dbo: %s", returnValue.controllerConfig.Name, err)
 					app.notify.NotifyAdmin("We couldn't save a TmpLog to the sqlite dbo", clienttoserverapi.ProblemNotification)
 				}
 			}
+
+			app.logger.Printf("This iteration of the control loop took %s\n", time.Since(loopStart).String())
+
+		case <-ctx.Done():
+			return
 		}
-
-		app.logger.Printf("This iteration of the control loop took %s\n", time.Since(loopStart).String())
-
-	case <-ctx.Done():
-		return
 	}
-
 }
 
 // @TODO Maybe these should all be configurable
 const (
 	intervalNotifyServerForSwitchHostComm = 5 * time.Minute
-
-	intervalNotifyServerForTempRead = 1 * time.Minute
+	intervalNotifyServerForTempRead       = 1 * time.Minute
 )
 
 type temperatureControlReturn struct {
@@ -144,105 +180,124 @@ type temperatureControlReturn struct {
 	err                            error
 }
 
-var TemperatureReadError = errors.New("there was a problem reading the current temperature")
-var AtLeastOneHostControlFailed = fmt.Errorf("at least one host control failed")
+var ErrTemperatureRead = errors.New("there was a problem reading the current temperature")
+var ErrAtLeastOneHostControlFailed = fmt.Errorf("at least one host control failed")
 
 // we'll print directly from this function, prefixing the name of the controller
-func (app *App) temperatureControl(retChan chan<- temperatureControlReturn, controllerConfig busconfiggopher.Controller) {
-	//prepare our channel response
-	ret := temperatureControlReturn{
-		controllerConfig:               controllerConfig,
-		successfulHostControlTimestamp: make(map[string]time.Time),
-	}
-
+func (app *App) temperatureControl(ctx context.Context, controllerConfig busconfiggopher.Controller) temperatureControlReturn {
 	desiredTemperature, ok := getCurrentDesiredTemperature(controllerConfig)
 	if !ok {
-		ret.noSchedulesAreActive = true
 		app.logger.Printf("[%s]: No temperature schedules have come to pass. We should wait around for a little\n", controllerConfig.Name)
-		retChan <- ret
-		return
+		return temperatureControlReturn{
+			controllerConfig:               controllerConfig,
+			successfulHostControlTimestamp: make(map[string]time.Time),
+			noSchedulesAreActive:           true,
+		}
 	}
-	// Get the current temperature
-	weCouldntReadTempPleaseTurnOffControls := false
+
 	currentTemperature, err := ds18b20therm.ReadTemperatureInF(controllerConfig.ThermometerPath)
 	if err != nil {
 		app.logger.Printf("[%s]: We had a problem getting current temperature from %#v. Turning off controls just in case. We'll wait a second and try again: %s\n", controllerConfig.Name, controllerConfig.ThermometerPath, err)
-		ret.err = errors.Join(TemperatureReadError, err)
-		weCouldntReadTempPleaseTurnOffControls = true
-	} else {
-		ret.successfulTemperatureReadTimestamp = time.Now()
-		app.logger.Printf("[%s]: The latest temperature is %.2f and desired temperature is %.2f\n", controllerConfig.Name, currentTemperature, desiredTemperature)
+		err = errors.Join(ErrTemperatureRead, err)
 	}
 
-	//should we turn controls on or off?
-	var newState ctlkasaplug.Control
-	if weCouldntReadTempPleaseTurnOffControls {
-		newState = ctlkasaplug.ControlOff
-	} else {
-		if controllerConfig.ControlType == "cool" { //our device(s) are coolers
-			// If the current temperature is greater than the desired temperature, then turn on the cooling elements
+	app.logger.Printf("[%s]: The latest temperature is %.2f and desired temperature is %.2f\n", controllerConfig.Name, currentTemperature, desiredTemperature)
+
+	newState := ctlkasaplug.ControlOff
+
+	if err == nil {
+		switch controllerConfig.ControlType {
+		case "cool":
+			// If the current temperature is greater than the desired temperature,
+			// then turn on the cooling elements
 			if currentTemperature > desiredTemperature {
 				newState = ctlkasaplug.ControlOn
-			} else {
-				newState = ctlkasaplug.ControlOff
 			}
-		} else { //our device(s) are heaters
-			// If the current temperature is less than the desired temperature, then turn on the heating elements
+
+		default:
+			// If the current temperature is less than the desired temperature,
+			// then turn on the heating elements
 			if currentTemperature < desiredTemperature {
 				newState = ctlkasaplug.ControlOn
-			} else {
-				newState = ctlkasaplug.ControlOff
 			}
 		}
 	}
+
 	if !controllerConfig.DisableFreezeProtection && currentTemperature < 33 && newState != ctlkasaplug.ControlOff {
 		newState = ctlkasaplug.ControlOff
 		app.logger.Printf("[%s]: FREEZE PROTECTION We're turning off all hosts since the temperature is %.2f\n", controllerConfig.Name, currentTemperature)
 	}
 
 	//communicate with the control hosts
-	var allHostsSuccessful = true
-	successfulHosts := make([]string, 0, len(controllerConfig.SwitchHosts))
+	successfulHostControlTimestamp := make(map[string]bool)
+
 	for _, host := range controllerConfig.SwitchHosts {
 		app.logger.Printf("[%s] Turning %s %s\n", controllerConfig.Name, newState, host)
-		const kasaTimeout = 4 * time.Second
-		ctx, cancel := context.WithTimeout(context.Background(), kasaTimeout)
-		err := app.kasa.ControlDevice(ctx, host, newState)
-		cancel()
-		if err != nil {
-			//note: we don't want to send this error to the channel because it will be confusing if there are more hosts. Err is set later
-			allHostsSuccessful = false
-			ret.successfulHostControlTimestamp[host] = time.Time{}
+
+		if ctx.Err() != nil {
+			return temperatureControlReturn{
+				err: ctx.Err(),
+			}
+		}
+
+		err := func() error {
+			const kasaTimeout = 4 * time.Second
+			ctx, cancel := context.WithTimeout(context.Background(), kasaTimeout)
+			defer cancel()
+
+			return app.kasa.ControlDevice(ctx, host, newState)
+		}()
+
+		if ctx.Err() != nil {
+			return temperatureControlReturn{
+				err: ctx.Err(),
+			}
+		}
+
+		switch {
+		case err != nil:
 			var exitError *exec.ExitError
 			if errors.As(err, &exitError) { // is our error because it timed out?
 				app.logger.Printf("[%s] Our call to controlDevice timed out after 4 seconds\n", controllerConfig.Name)
 			} else {
-				app.logger.Printf("[%s] Our call to controlDevice returned an error: %s\n", controllerConfig.Name, err.Error())
+				app.logger.Printf("[%s] Our call to controlDevice returned an error: %s\n", controllerConfig.Name, err)
 			}
-		} else {
-			ret.successfulHostControlTimestamp[host] = time.Now()
-			successfulHosts = append(successfulHosts, host)
+
+		default:
+			successfulHostControlTimestamp[host] = true
 		}
 
 		//TODO can we schedule a failsafe on the device in case we crash next iteration?
 	}
-	if !allHostsSuccessful {
-		if ret.err != nil {
-			ret.err = errors.Join(ret.err, AtLeastOneHostControlFailed)
-		} else {
-			ret.err = AtLeastOneHostControlFailed
+
+	if ctx.Err() != nil {
+		return temperatureControlReturn{
+			err: ctx.Err(),
 		}
 	}
 
-	if weCouldntReadTempPleaseTurnOffControls { //don't write to csv if we had issues getting the temperature
-		retChan <- ret
-		return
+	if len(successfulHostControlTimestamp) != len(controllerConfig.SwitchHosts) {
+		err = errors.Join(err, ErrAtLeastOneHostControlFailed)
 	}
 
-	//pass on a pre-formatted log object so our caller can save it
-	ret.temperature = busclienttempdata.Temperature{
+	//if newState == ctlkasaplug.ControlOff {
+	if errors.Is(err, ErrTemperatureRead) {
+		return temperatureControlReturn{
+			// YOU NEED TO FIGURE THIS OUT!
+			controllerConfig:               controllerConfig,
+			successfulHostControlTimestamp: make(map[string]time.Time),
+			noSchedulesAreActive:           true,
+		}
+	}
+
+	successfulHosts := make([]string, 0, len(successfulHostControlTimestamp))
+	for k := range successfulHostControlTimestamp {
+		successfulHosts = append(successfulHosts, k)
+	}
+
+	temperature := busclienttempdata.Temperature{
 		ControllerName:            controllerConfig.Name,
-		Timestamp:                 ret.successfulTemperatureReadTimestamp,
+		Timestamp:                 time.Now(),
 		TemperatureInF:            currentTemperature,
 		DesiredTemperatureInF:     desiredTemperature,
 		IsHeatingNotCooling:       controllerConfig.ControlType != "cool",
@@ -250,7 +305,13 @@ func (app *App) temperatureControl(retChan chan<- temperatureControlReturn, cont
 		SuccessfulHostsControlled: successfulHosts,
 	}
 
-	retChan <- ret
+	return temperatureControlReturn{
+		// YOU NEED TO FIGURE THIS OUT!
+		controllerConfig:               controllerConfig,
+		successfulHostControlTimestamp: make(map[string]time.Time),
+		noSchedulesAreActive:           true,
+		temperature:                    temperature,
+	}
 }
 
 func getCurrentDesiredTemperature(controller busconfiggopher.Controller) (float32, bool) {

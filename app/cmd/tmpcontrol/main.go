@@ -4,6 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+
 	"github.com/jroedel/tmpcontrol/app/sdk/apptmpcontrol"
 	"github.com/jroedel/tmpcontrol/business/busclient/busadminnotifier"
 	"github.com/jroedel/tmpcontrol/business/busclient/busclienttempdata"
@@ -14,9 +20,6 @@ import (
 	"github.com/jroedel/tmpcontrol/foundation/ctlkasaplug"
 	"github.com/jroedel/tmpcontrol/foundation/ds18b20therm"
 	"github.com/jroedel/tmpcontrol/foundation/sms"
-	"log"
-	"os"
-	"strings"
 )
 
 var (
@@ -98,9 +101,13 @@ func main() {
 	defer db.Close()
 
 	bfLogId := os.Getenv("BREWFATHER_LOG_ID")
+
 	var bfapi *brewfatherapi.Client
 	if bfLogId != "" {
 		bfapi, err = brewfatherapi.New(bfLogId)
+		if err != nil {
+			logger.Fatalf("create father api: %v", err)
+		}
 	}
 
 	th, err := busclienttempdata.New(db, cln, bfapi)
@@ -123,16 +130,21 @@ func main() {
 		logger.Fatalf("Error creating app: %v", err)
 	}
 
+	// -------------------------------------------------------------------------
+
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	err = app.Start(ctx)
-	if err != nil {
-		logger.Fatalf("Error starting app: %v", err)
-	}
 
-	select {
-	case <-ctx.Done():
-		fmt.Println("Is this even possible?")
+	go func() {
+		<-shutdown
+		cancel()
+	}()
+
+	if err := app.Start(ctx); err != nil {
+		logger.Fatalf("Error starting app: %v", err)
 	}
 }
 
