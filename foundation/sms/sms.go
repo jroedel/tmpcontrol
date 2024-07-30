@@ -1,17 +1,31 @@
 package sms
 
-func Send(number string, message string) error {
+import "errors"
+
+type Sms struct {
+	apiKey string
+}
+
+func New(apiKey string) (*Sms, error) {
+	sms := Sms{apiKey: apiKey}
+	if !sms.healthy() {
+		return nil, errors.New("sms: can't connect")
+	}
+	return &sms, nil
+}
+
+func (s *Sms) Send(number string, message string) error {
 	return nil
 	//url := "https://czsrqykgpsseofmwnbja5t46f40tojzd.lambda-url.us-east-2.on.aws/"
-	//key := os.Getenv("ADMIN_NOTIFY_KEY")
+	//key := os.Getenv("SMS_NOTIFY_KEY")
 	//if key == "" {
-	//	errMessage := "ADMIN_NOTIFY_KEY environment variable not set, unable to notify admin via SMS"
+	//	errMessage := "SMS_NOTIFY_KEY environment variable not set, unable to notify admin via SMS"
 	//	fmt.Println(errMessage)
 	//	return 0, errors.New(errMessage)
 	//}
-	//number := os.Getenv("ADMIN_NOTIFY_NUMBER")
+	//number := os.Getenv("SMS_NOTIFY_NUMBER")
 	//if number == "" {
-	//	errMessage := "ADMIN_NOTIFY_NUMBER environment variable not set, unable to notify admin via SMS"
+	//	errMessage := "SMS_NOTIFY_NUMBER environment variable not set, unable to notify admin via SMS"
 	//	fmt.Println(errMessage)
 	//	return 0, errors.New(errMessage)
 	//}
@@ -33,6 +47,11 @@ func Send(number string, message string) error {
 	//}
 	//defer resp.Body.Close()
 	//return len(p), nil
+}
+
+func (s *Sms) healthy() bool {
+	//TODO
+	return true
 }
 
 type smsPayload struct {

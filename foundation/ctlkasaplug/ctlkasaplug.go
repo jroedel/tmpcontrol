@@ -6,16 +6,24 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type KasaController struct {
 	kasaPath string
 }
 
-func New(kasaPath string) *KasaController {
+func New(kasaPath string) (*KasaController, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, kasaPath, "--version")
+	_, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("ctlkasaplug: %w", err)
+	}
 	return &KasaController{
 		kasaPath: kasaPath,
-	}
+	}, nil
 }
 
 func (k *KasaController) ControlDevice(ctx context.Context, host string, action Control) error {

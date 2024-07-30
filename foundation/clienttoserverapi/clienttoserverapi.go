@@ -2,36 +2,54 @@
 package clienttoserverapi
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"time"
 )
 
-type NotifyApiMessage struct {
-	ClientId string  `json:"clientId"`
-	Message  string  `json:"message"`
-	Urgency  Urgency `json:"urgency"`
-}
+var ClientIdRegex = regexp.MustCompile(`^[-a-zA-Z0-9]{3,50}$`)
 
 type Client struct {
 	serverBaseUrl string
 	clientId      string
 }
 
-func NewClient(serverBaseUrl string, clientId string) *Client {
-	return &Client{serverBaseUrl: serverBaseUrl, clientId: clientId}
+func New(serverBaseUrl string, clientId string) (*Client, error) {
+	cln := Client{serverBaseUrl: serverBaseUrl, clientId: clientId}
+	if !cln.Healthy() {
+		return nil, fmt.Errorf("could not connect to server")
+	}
+	return &cln, nil
 }
 
 const stdTimeout = time.Second * 5
 
-func (s *Client) GetConfig() (ConfigApiMessage, error) {
+func (cln *Client) Healthy() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), stdTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", s.serverBaseUrl+"/configuration", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", cln.serverBaseUrl+"/health", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	return true
+}
+
+func (cln *Client) GetConfig() (ConfigApiMessage, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), stdTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", cln.serverBaseUrl+"/configuration", nil)
 	if err != nil {
 		return ConfigApiMessage{}, fmt.Errorf("create config get request: %w", err)
 	}
@@ -52,67 +70,17 @@ func (s *Client) GetConfig() (ConfigApiMessage, error) {
 	return config, nil
 }
 
-func (s *Client) SendTemperature(data TemperatureApiMessage) error {
+func (cln *Client) SendTemperature(data TemperatureApiMessage) error {
 	//TODO
 	return nil
 }
 
-func (s *Client) Notify(msg NotifyApiMessage) error {
+// NewNotifyApiMessage prefills the client id
+func (cln *Client) NewNotifyApiMessage() NotifyApiMessage {
+	return NotifyApiMessage{ClientId: cln.clientId}
+}
+
+func (cln *Client) Notify(msg NotifyApiMessage) error {
 	//TODO
-	return nil
-}
-
-type ConfigApiMessage struct {
-	//TODO
-}
-
-type TemperatureApiMessage struct {
-	//TODO
-}
-
-type Urgency int
-
-const (
-	InfoNotification Urgency = iota + 1
-	ProblemNotification
-	SeriousNotification
-)
-
-func (s Urgency) String() string {
-	switch s {
-	case InfoNotification:
-		return "info"
-	case ProblemNotification:
-		return "problem"
-	case SeriousNotification:
-		return "serious"
-	default:
-		return ""
-	}
-}
-
-func (s Urgency) MarshalJSON() ([]byte, error) {
-	buffer := bytes.NewBufferString(`""`)
-	buffer.WriteString(s.String())
-	buffer.WriteString(`"`)
-	return buffer.Bytes(), nil
-}
-
-func (s *Urgency) UnmarshalJSON(b []byte) error {
-	var j string
-	err := json.Unmarshal(b, &j)
-	if err != nil {
-		return err
-	}
-	switch j {
-	case "info":
-		*s = InfoNotification
-	case "problem":
-		*s = ProblemNotification
-	case "serious":
-		*s = SeriousNotification
-	default:
-		*s = InfoNotification //we won't make a big deal about it
-	}
 	return nil
 }

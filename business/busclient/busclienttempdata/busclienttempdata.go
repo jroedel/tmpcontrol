@@ -3,10 +3,14 @@
 // 1. storing data locally upon request
 // 2. periodically send temperature data to the server
 // 3. periodically send temperature averages to brewfatherapi
+// 4. notify admin when we haven't been able to contact control hosts in a while
+// 5. notify admin when we haven't been able to read temperature in a while
 package busclienttempdata
 
 import (
+	"context"
 	"errors"
+	"github.com/jroedel/tmpcontrol/business/busclient/busadminnotifier"
 	"github.com/jroedel/tmpcontrol/foundation/brewfatherapi"
 	"github.com/jroedel/tmpcontrol/foundation/clientsqlite"
 	"github.com/jroedel/tmpcontrol/foundation/clienttoserverapi"
@@ -19,11 +23,14 @@ type TempHandler struct {
 	db *clientsqlite.ClientSqlite
 
 	//optional
-	cln   *clienttoserverapi.Client
-	bfapi *brewfatherapi.Client
+	cln    *clienttoserverapi.Client
+	bfapi  *brewfatherapi.Client
+	notify *busadminnotifier.AdminNotifier
 
 	//internal
-	executionID string
+	executionID                 string
+	currentlyMonitoringTemp     bool
+	tempDataReceivedPerInterval int
 }
 
 func New(db *clientsqlite.ClientSqlite, cln *clienttoserverapi.Client, bfapi *brewfatherapi.Client) (*TempHandler, error) {
@@ -43,6 +50,7 @@ func New(db *clientsqlite.ClientSqlite, cln *clienttoserverapi.Client, bfapi *br
 }
 
 func (th *TempHandler) HandleNewTempData(data Temperature) error {
+	th.tempDataReceivedPerInterval++
 	return th.create(data)
 }
 
@@ -60,6 +68,30 @@ func (th *TempHandler) StartSendingTempDataToServer(interval time.Duration) (can
 		//send it to the server
 	}()
 	return cancel, nil
+}
+
+// NotifyAdminIfNoNewTempDataPerInterval goroutine should be canceled via context
+func (th *TempHandler) NotifyAdminIfNoNewTempDataPerInterval(ctx context.Context, interval time.Duration) error {
+	if th.currentlyMonitoringTemp {
+		return errors.New("temp handler: already monitoring temp data")
+	}
+	if th.notify == nil {
+		return errors.New("temp handler: client not initialized")
+	}
+	th.currentlyMonitoringTemp = true
+
+	go func() {
+		tick := time.NewTicker(interval)
+		select {
+		case <-tick.C:
+			if th.tempDataReceivedPerInterval == 0 {
+				th.notify.NotifyAdmin("We haven't had contact with the thermometer for controller %s for %s")
+			}
+		case <-ctx.Done():
+			return
+		}
+	}()
+	return nil
 }
 
 func (th *TempHandler) EnabledSendingTempAvgToBrewfatherEvery15Minutes() bool {

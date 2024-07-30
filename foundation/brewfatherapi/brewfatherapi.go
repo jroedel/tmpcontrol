@@ -16,21 +16,21 @@ type Client struct {
 	apiLogId string
 }
 
-func New(brewfatherApiLogId string) (Client, error) {
+func New(brewfatherApiLogId string) (*Client, error) {
 	if brewfatherApiLogId == "" {
-		return Client{}, errors.New("brewfatherapi: logId is empty")
+		return nil, errors.New("brewfatherapi: logId is empty")
 	}
 	const logIdRegex = `[a-z0-9-]{4,18}`
 	var re = regexp.MustCompile(logIdRegex)
 	if !re.MatchString(brewfatherApiLogId) {
-		return Client{}, errors.New("brewfatherapi: logId is not valid")
+		return nil, errors.New("brewfatherapi: logId is not valid")
 	}
-	return Client{
+	return &Client{
 		apiLogId: brewfatherApiLogId,
 	}, nil
 }
 
-func (c Client) SendTemperatureReading(temp TempReading) error {
+func (c *Client) SendTemperatureReading(temp TempReading) error {
 	if !temp.valid() {
 		return errors.New("invalid temperature reading")
 	}

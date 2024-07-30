@@ -4,9 +4,11 @@ package busconfiggopher
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"github.com/jroedel/tmpcontrol/business/busclient/busadminnotifier"
 	"github.com/jroedel/tmpcontrol/foundation/clienttoserverapi"
 	"os"
 	"slices"
@@ -20,29 +22,20 @@ type ConfigGopher struct {
 	//The contents of the local config file will be overridden with server
 	//data when we get it successfully
 	localConfigPath string
+
+	//completely optional
+	notify *busadminnotifier.AdminNotifier
 }
 
-func New(cln *clienttoserverapi.Client, localConfigPath string) (*ConfigGopher, error) {
+func New(cln *clienttoserverapi.Client, localConfigPath string, notify *busadminnotifier.AdminNotifier) (*ConfigGopher, error) {
 	if cln == nil && localConfigPath == "" {
 		return nil, fmt.Errorf("ConfigGopher: we require either a client or localConfigPath")
 	}
 	return &ConfigGopher{
 		cln:             cln,
 		localConfigPath: localConfigPath,
+		notify:          notify,
 	}, nil
-}
-
-type ControllersConfig struct {
-	Controllers []Controller `json:"controllers"`
-}
-
-type Controller struct {
-	Name                    string                `json:"name"`
-	ThermometerPath         string                `json:"thermometerPath"`
-	ControlType             string                `json:"controlType"`
-	SwitchHosts             []string              `json:"switchHosts"`
-	TemperatureSchedule     map[time.Time]float32 `json:"temperatureSchedule"`
-	DisableFreezeProtection bool                  `json:"disableFreezeProtection"`
 }
 
 func (cg *ConfigGopher) GetSourceKind() ConfigSource {
@@ -129,6 +122,11 @@ func (cg *ConfigGopher) fetchConfigFromFile() (ControllersConfig, error) {
 	return config, nil
 }
 
+func (cg *ConfigGopher) NotifyAdminIfWeHaventReceivedConfigInInterval(ctx context.Context, interval time.Duration) error {
+	//TODO
+	return nil
+}
+
 func ValidateConfig(config ControllersConfig) error {
 	//TODO
 	return nil
@@ -155,23 +153,4 @@ func hashConfig(c ControllersConfig) []byte {
 		return nil
 	}
 	return b.Bytes()
-}
-
-type ConfigSource int
-
-const (
-	ConfigSourceLocalFile ConfigSource = iota + 1
-	ConfigSourceServer
-)
-
-func (c ConfigSource) String() string {
-	switch c {
-	case ConfigSourceLocalFile:
-		return "local file"
-	case ConfigSourceServer:
-		return "server"
-	default:
-		panic(fmt.Sprintf("Unknown config source: %#v", c))
-	}
-	return ""
 }

@@ -1,15 +1,21 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"github.com/jroedel/tmpcontrol"
+	"github.com/jroedel/tmpcontrol/app/sdk/apptmpcontrol"
+	"github.com/jroedel/tmpcontrol/business/busclient/busadminnotifier"
+	"github.com/jroedel/tmpcontrol/business/busclient/busclienttempdata"
 	"github.com/jroedel/tmpcontrol/business/busclient/busconfiggopher"
+	"github.com/jroedel/tmpcontrol/foundation/brewfatherapi"
+	"github.com/jroedel/tmpcontrol/foundation/clientsqlite"
+	"github.com/jroedel/tmpcontrol/foundation/clienttoserverapi"
+	"github.com/jroedel/tmpcontrol/foundation/ds18b20therm"
 	"github.com/jroedel/tmpcontrol/foundation/sms"
 	"log"
 	"os"
 	"strings"
-	"time"
 )
 
 var (
@@ -38,52 +44,90 @@ func main() {
 	if err := validateParams(); err != nil {
 		log.Fatal(err)
 	}
-	logger := tmpcontrol.Logger(log.New(os.Stdout, "[tmpcontrol] ", 0))
-	//db, err := tmpcontrol.NewSqliteDbFromFilename("tmps.db", logger)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//defer db.Close()
-	//err = db.PersistTmpLog(tmpcontrol.TmpLog{
-	//	ControllerName:        "test",
-	//	Timestamp:             time.Now(),
-	//	TemperatureInF:        44.2,
-	//	DesiredTemperatureInF: 33,
-	//	IsHeatingNotCooling:   false,
-	//	TurningOnNotOff:       true,
-	//	HostsPipeSeparated:    "",
-	//})
-	//if err != nil {
-	//	fmt.Printf("Error persisting tmp log: %s\n", err)
-	//}
-	//
-	//tmplogs, err := db.FetchTmpLogsNotYetSentToServer()
-	//if err != nil {
-	//	fmt.Printf("Error fetching tmp logs: %s\n", err)
-	//}
-	//fmt.Printf("Fetched %d tmp logs:\n%+v", len(tmplogs), tmplogs)
-	//
-	//idsToMarkSentToServer := make([]int, 0, len(tmplogs))
-	//for _, obj := range tmplogs {
-	//	idsToMarkSentToServer = append(idsToMarkSentToServer, obj.DbAutoId)
-	//}
-	//fmt.Printf("Ids to mark sent to server: %#v\n", idsToMarkSentToServer)
-	//db.markTmpLogsAsSentToServer(idsToMarkSentToServer)
-	//return
-	tempReader := tmpcontrol.NewDS18B20Reader(logger)
-	fmt.Printf("Assuming we're on a Raspberry Pi, we'll check %#v for connected thermometers\n", tmpcontrol.ThermometerDevicesRootPath)
-	thermometerPaths := tempReader.EnumerateThermometerPaths()
+	logger := log.New(os.Stdout, "[tmpcontrol] ", 0)
+
+	fmt.Println("Assuming we're on a Raspberry Pi, we'll check for connected thermometers")
+	thermometerPaths, _ := ds18b20therm.EnumerateThermometerPaths()
 	if len(thermometerPaths) == 0 {
 		fmt.Println("We didn't find any :-(")
 	} else {
 		fmt.Printf("We found these:\n%s\n", strings.Join(thermometerPaths, "\n"))
 	}
 
-	kasaController := tmpcontrol.HeatOrCoolController(tmpcontrol.NewKasaHeatOrCoolController(kasaPath))
-	adminNotifier := sms.SmsNotifier{}
-	cg := busconfiggopher.ConfigGopher{serverRoot: configServerRootUrl, clientId: clientIdentifier, localConfigPath: localConfigPath, ConfigFetchInterval: time.Duration(configFetchIntervalInSeconds) * time.Second, NotifyOutput: adminNotifier}
-	cl := tmpcontrol.NewControlLooper(&cg, kasaController, logger)
-	cl.StartControlLoop()
+	smsKey := os.Getenv("SMS_NOTIFY_KEY")
+	smsNumber := os.Getenv("SMS_NOTIFY_NUMBER")
+	var smsApi *sms.Sms
+	if smsKey != "" && smsNumber != "" {
+		var err error
+		smsApi, err = sms.New(smsKey)
+		if err != nil {
+			logger.Printf("Failed to create SMS client: %v", err)
+		}
+	} else {
+		smsKey = ""
+		smsNumber = ""
+	}
+
+	var cln *clienttoserverapi.Client
+	if configServerRootUrl != "" && clientIdentifier != "" {
+		var err error
+		cln, err = clienttoserverapi.New(configServerRootUrl, clientIdentifier)
+		if err != nil {
+			logger.Printf("Failed to create config API client: %v", err)
+		}
+	}
+
+	var notify *busadminnotifier.AdminNotifier
+	if smsApi != nil || cln != nil {
+		var err error
+		notify, err = busadminnotifier.New(smsApi, smsNumber, cln)
+		if err != nil {
+			logger.Printf("Failed to create admin notifier: %v", err)
+		}
+	}
+
+	const dbPath = "tmpclient.db"
+	db, err := clientsqlite.New(dbPath)
+	if err != nil {
+		if notify != nil {
+			notify.NotifyAdmin(fmt.Sprintf("Error creating sqlite dbo: %s\n", err), clienttoserverapi.SeriousNotification)
+		}
+		logger.Fatalf("Error creating sqlite dbo: %s\n", err)
+	}
+	defer db.Close()
+
+	bfLogId := os.Getenv("BREWFATHER_LOG_ID")
+	var bfapi *brewfatherapi.Client
+	if bfLogId != "" {
+		bfapi, err = brewfatherapi.New(bfLogId)
+	}
+
+	th, err := busclienttempdata.New(db, cln, bfapi)
+	if err != nil {
+		logger.Fatalf("Error creating temp handler: %v", err)
+	}
+
+	cg, err := busconfiggopher.New(cln, localConfigPath, notify)
+	if err != nil {
+		logger.Fatalf("Error creating config gopher: %v", err)
+	}
+
+	app, err := apptmpcontrol.New(cg, th, logger, notify)
+	if err != nil {
+		logger.Fatalf("Error creating app: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err = app.Start(ctx)
+	if err != nil {
+		logger.Fatalf("Error starting app: %v", err)
+	}
+
+	select {
+	case <-ctx.Done():
+		fmt.Println("Is this even possible?")
+	}
 }
 
 // validate user input
@@ -95,8 +139,8 @@ func validateParams() error {
 			return fmt.Errorf("please specify the client identifier `tmpcontrol -client-identifier our-name`")
 		}
 		//validate clientIdentifier
-		if !tmpcontrol.ClientIdentifiersRegex.MatchString(clientIdentifier) {
-			return fmt.Errorf("the client identifier must match the regular expression: %s", tmpcontrol.ClientIdentifiersRegex.String())
+		if !clienttoserverapi.ClientIdRegex.MatchString(clientIdentifier) {
+			return fmt.Errorf("the client identifier must match the regular expression: %s", clienttoserverapi.ClientIdRegex.String())
 		}
 	}
 
@@ -107,7 +151,5 @@ func validateParams() error {
 			kasaPath = "kasa"
 		}
 	}
-
-	//TODO check if we can execute kasa
 	return nil
 }

@@ -28,6 +28,8 @@ func NewDS18B20Reader(logger Logger) *DS18B20Reader {
 	}
 }
 
+const minValidFahrenheitTemperature = -30
+const maxValidFahrenheitTemperature = 215
 func (t DS18B20Reader) ReadTemperatureInF(temperaturePath string) (float32, error) {
 	var temperatureBytes []byte
 	for counter := 1; counter <= 3; counter++ {
